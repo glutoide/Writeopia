@@ -151,7 +151,7 @@ compose.desktop {
             }
 
             windows {
-                packageVersion = "0.47.0"
+                packageVersion = desktopAppVersion
                 iconFile.set(iconsRoot.resolve("icon-windows.ico"))
             }
         }
