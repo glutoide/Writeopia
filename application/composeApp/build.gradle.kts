@@ -1,6 +1,8 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+val desktopAppVersion = rootProject.extra["desktopAppVersion"] as String
+
 plugins {
     kotlin("multiplatform")
     alias(libs.plugins.compose.multiplatform)
@@ -144,7 +146,7 @@ compose.desktop {
             }
 
             linux {
-                packageVersion = "0.47.0"
+                packageVersion = desktopAppVersion
                 iconFile.set(iconsRoot.resolve("icon-linux.png"))
             }
 
