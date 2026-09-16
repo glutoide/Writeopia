@@ -1,0 +1,23 @@
+name: Verify updater architecture
+
+on:
+  push:
+    branches:
+      - verify-425-architecture
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Update module tests
+        run: ./gradlew :application:features:update:jvmTest
+      - name: Update module ktlint
+        run: ./gradlew :application:features:update:ktlintCheck
+      - name: Compile desktop app
+        run: ./gradlew :application:composeApp:compileKotlinJvm
