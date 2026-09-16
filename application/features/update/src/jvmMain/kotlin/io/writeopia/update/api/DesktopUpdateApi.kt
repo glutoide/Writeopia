@@ -3,9 +3,9 @@ package io.writeopia.update.api
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.request.get
-import io.writeopia.update.model.DesktopAppVersionResponse
+import io.writeopia.app.endpoints.EndPoints
+import io.writeopia.sdk.serialization.response.DesktopAppVersionResponse
 
-private const val DESKTOP_VERSION_ENDPOINT = "api/app/desktop-version"
 
 class DesktopUpdateApi(
     private val client: HttpClient,
@@ -13,5 +13,5 @@ class DesktopUpdateApi(
 ) : DesktopUpdateVersionSource {
 
     override suspend fun latestVersion(): DesktopAppVersionResponse =
-        client.get("${baseUrl.trimEnd('/')}/$DESKTOP_VERSION_ENDPOINT").body()
+        client.get("${baseUrl.trimEnd('/')}/${EndPoints.desktopAppVersion()}").body()
 }
