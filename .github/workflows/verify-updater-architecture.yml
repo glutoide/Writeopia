@@ -5,6 +5,10 @@ on:
     branches:
       - verify-425-architecture
 
+concurrency:
+  group: verify-425-architecture
+  cancel-in-progress: true
+
 jobs:
   verify:
     runs-on: ubuntu-22.04
