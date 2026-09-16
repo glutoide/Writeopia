@@ -22,7 +22,7 @@ fun Routing.desktopAppVersionRoute() {
         call.response.header(HttpHeaders.CacheControl, "public, max-age=$CACHE_MAX_AGE_SECONDS")
         call.respond(
             HttpStatusCode.OK,
-            DesktopAppVersionResponse(version = LATEST_DESKTOP_APP_VERSION)
+            DesktopAppVersionResponse(version = DesktopAppVersionConfig.CURRENT)
         )
     }
 }
