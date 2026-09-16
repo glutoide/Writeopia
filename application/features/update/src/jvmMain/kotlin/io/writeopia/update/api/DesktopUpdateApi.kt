@@ -6,7 +6,6 @@ import io.ktor.client.request.get
 import io.writeopia.app.endpoints.EndPoints
 import io.writeopia.sdk.serialization.response.DesktopAppVersionResponse
 
-
 class DesktopUpdateApi(
     private val client: HttpClient,
     private val baseUrl: String
