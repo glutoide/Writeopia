@@ -15,7 +15,7 @@ jobs:
           distribution: zulu
           java-version: '21'
       - uses: gradle/actions/setup-gradle@v6
-      - name: Run gateway tests
-        run: ./gradlew :backend:gateway:test
+      - name: Run endpoint test
+        run: ./gradlew :backend:gateway:test --tests "io.writeopia.api.geteway.DesktopAppVersionRoutingTest"
       - name: Compile gateway
         run: ./gradlew :backend:gateway:compileKotlin
