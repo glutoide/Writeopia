@@ -1,0 +1,51 @@
+name: Verify PR 815 final
+
+on:
+  push:
+    branches:
+      - verify-pr815-final-2
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Compile generated desktop version
+        run: ./gradlew :application:core:configuration:compileKotlinJvm
+      - name: Run updater tests
+        run: ./gradlew :application:features:update:jvmTest
+      - name: Run updater ktlint
+        run: ./gradlew :application:features:update:ktlintCheck
+      - name: Compile desktop app
+        run: ./gradlew :application:composeApp:compileKotlinJvm
+      - name: Install virtual display tools
+        run: sudo apt-get update && sudo apt-get install -y xvfb x11-utils
+      - name: Launch real desktop app
+        shell: bash
+        run: |
+          xvfb-run -a bash -lc '
+            set -euo pipefail
+            ./gradlew :application:composeApp:run > /tmp/writeopia-app.log 2>&1 &
+            app_pid=$!
+            for attempt in $(seq 1 90); do
+              if ! kill -0 "$app_pid" 2>/dev/null; then
+                cat /tmp/writeopia-app.log
+                exit 1
+              fi
+              window_count=$(xwininfo -root -tree 2>/dev/null | grep -E "0x[0-9a-f]+ .* [0-9]+x[0-9]+" | wc -l || true)
+              if [ "$window_count" -gt 0 ]; then
+                kill "$app_pid" 2>/dev/null || true
+                wait "$app_pid" 2>/dev/null || true
+                exit 0
+              fi
+              sleep 2
+            done
+            cat /tmp/writeopia-app.log
+            kill "$app_pid" 2>/dev/null || true
+            exit 1
+          '
