@@ -1,0 +1,24 @@
+name: Verify public auth routing cycle 1
+
+on:
+  push:
+    branches:
+      - verify-public-auth-routing-cycle1
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify micro auth health route through public host
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --location --max-time 20 https://writeopia.io/api/auth/health | tee /tmp/auth-health.txt
+          grep -Fx 'OK' /tmp/auth-health.txt
+      - name: Verify micro auth version route through public host
+        run: |
+          set -euo pipefail
+          curl --fail-with-body --silent --show-error --location --max-time 20 https://writeopia.io/api/auth/version | tee /tmp/auth-version.txt
+          test -s /tmp/auth-version.txt
