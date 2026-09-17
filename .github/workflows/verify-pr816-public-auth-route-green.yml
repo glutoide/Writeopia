@@ -1,0 +1,21 @@
+name: Verify PR 816 public auth route green
+
+on:
+  push:
+    branches:
+      - verify-pr816-public-auth-route-green
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Run app version endpoint test
+        run: ./gradlew :backend:micro:auth:test --tests "io.writeopia.api.auth.AppVersionRoutingTest"
+      - name: Compile auth microservice
+        run: ./gradlew :backend:micro:auth:compileKotlin
