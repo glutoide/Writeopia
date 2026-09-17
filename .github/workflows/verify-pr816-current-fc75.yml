@@ -1,0 +1,24 @@
+name: Verify PR 816 synced head
+
+on:
+  push:
+    branches:
+      - verify-pr816-current-fc75
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Verify endpoint test
+        run: ./gradlew :backend:micro:auth:test --tests "io.writeopia.api.auth.AppVersionRoutingTest"
+      - name: Verify auth compilation
+        run: ./gradlew :backend:micro:auth:compileKotlin
