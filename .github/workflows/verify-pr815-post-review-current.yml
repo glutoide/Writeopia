@@ -1,0 +1,31 @@
+name: Verify PR 815 post-review current
+
+on:
+  push:
+    branches:
+      - verify-pr815-post-review-current
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: zulu
+          java-version: '21'
+      - uses: gradle/actions/setup-gradle@v6
+      - name: Verify updater tests
+        run: ./gradlew :application:features:update:jvmTest
+      - name: Verify updater ktlint
+        run: ./gradlew :application:features:update:ktlintCheck
+      - name: Verify desktop compilation
+        run: ./gradlew :application:composeApp:compileKotlinJvm
+      - name: Verify constrained release permissions
+        run: |
+          grep -A2 '^permissions:' .github/workflows/creates-desktop-apps.yml | grep 'contents: read'
+          grep -A3 '^    permissions:' .github/workflows/creates-desktop-apps.yml | grep 'actions: read'
+          grep -A3 '^    permissions:' .github/workflows/creates-desktop-apps.yml | grep 'contents: read'
