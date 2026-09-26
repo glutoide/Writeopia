@@ -5,8 +5,10 @@ package io.writeopia.ui.manager
 import io.writeopia.sdk.manager.WriteopiaManager
 import io.writeopia.sdk.model.action.Action
 import io.writeopia.sdk.model.story.LastEdit
+import io.writeopia.sdk.models.comment.Comment
 import io.writeopia.sdk.models.document.Document
 import io.writeopia.sdk.models.span.Span
+import io.writeopia.sdk.models.span.SpanInfo
 import io.writeopia.sdk.models.story.StoryStep
 import io.writeopia.sdk.models.story.StoryTypes
 import io.writeopia.sdk.models.story.Tag
@@ -18,6 +20,8 @@ import io.writeopia.ui.model.TextInput
 import io.writeopia.ui.utils.MapStoryData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -1165,6 +1169,61 @@ class WriteopiaStateManagerTest {
     }
 
     @Test
+    fun lineBreakTextInputShouldUseRecalculatedCommentSpans() = runTest {
+        val now = Clock.System.now()
+        val conversationId = "conversation-1"
+        val storyManager = WriteopiaStateManager.create(
+            writeopiaManager = WriteopiaManager(),
+            dispatcher = UnconfinedTestDispatcher(testScheduler),
+            userRepository = userRepository,
+        )
+
+        storyManager.loadDocument(
+            Document(
+                content = mapOf(
+                    0.0 to StoryStep(
+                        type = StoryTypes.TEXT.type,
+                        text = "helloworld",
+                        spans = setOf(
+                            SpanInfo.create(0, 10, Span.COMMENT, conversationId)
+                        ),
+                    )
+                ),
+                workspaceId = "",
+                createdAt = now,
+                lastUpdatedAt = now,
+                parentId = "root",
+                lastSyncedAt = null,
+            )
+        )
+
+        storyManager.handleTextInput(
+            TextInput(
+                text = "hello\nworld",
+                start = 6,
+                end = 6,
+                spans = setOf(
+                    SpanInfo.create(0, 11, Span.COMMENT, conversationId)
+                ),
+            ),
+            position = 0.0,
+            lineBreakByContent = true,
+        )
+        advanceUntilIdle()
+
+        val stories = storyManager.currentStory.value.stories.entries.sortedBy { it.key }
+        assertEquals(2, stories.size)
+        assertEquals(
+            setOf(SpanInfo.create(0, 5, Span.COMMENT, conversationId)),
+            stories[0].value.spans,
+        )
+        assertEquals(
+            setOf(SpanInfo.create(0, 5, Span.COMMENT, conversationId)),
+            stories[1].value.spans,
+        )
+    }
+
+    @Test
     fun itShouldBePossibleToAddBoldToText() = runTest {
         val now = Clock.System.now()
 
@@ -1929,5 +1988,114 @@ class WriteopiaStateManagerTest {
             sortedStories[1].value.type,
             "Image should be after title"
         )
+    }
+
+    @Test
+    fun loadDocumentPreservesCommentConversationsInCurrentDocument() = runTest {
+        val now = Clock.System.now()
+        val comments = mapOf(
+            "conversation-1" to listOf(
+                Comment(id = "comment-1", text = "Keep me")
+            )
+        )
+        val manager = WriteopiaStateManager.create(
+            writeopiaManager = WriteopiaManager(),
+            dispatcher = UnconfinedTestDispatcher(testScheduler),
+            userRepository = userRepository,
+        )
+
+        manager.loadDocument(
+            Document(
+                content = MapStoryData.singleMessage(),
+                commentConversations = comments,
+                workspaceId = "",
+                createdAt = now,
+                lastUpdatedAt = now,
+                parentId = "root",
+                lastSyncedAt = null,
+            )
+        )
+
+        val currentDocument = manager.currentDocument.filterNotNull().first()
+
+        assertEquals(comments, currentDocument.commentConversations)
+    }
+
+    @Test
+    fun updateDocumentReplacesCommentConversationsInCurrentDocument() = runTest {
+        val now = Clock.System.now()
+        val initialComments = mapOf(
+            "conversation-1" to listOf(
+                Comment(id = "comment-1", text = "Old")
+            )
+        )
+        val updatedComments = mapOf(
+            "conversation-2" to listOf(
+                Comment(id = "comment-2", text = "New")
+            )
+        )
+        val manager = WriteopiaStateManager.create(
+            writeopiaManager = WriteopiaManager(),
+            dispatcher = UnconfinedTestDispatcher(testScheduler),
+            userRepository = userRepository,
+        )
+
+        manager.loadDocument(
+            Document(
+                content = MapStoryData.singleMessage(),
+                commentConversations = initialComments,
+                workspaceId = "",
+                createdAt = now,
+                lastUpdatedAt = now,
+                parentId = "root",
+                lastSyncedAt = null,
+            )
+        )
+        manager.updateDocument(
+            Document(
+                content = MapStoryData.singleMessage(),
+                commentConversations = updatedComments,
+                workspaceId = "",
+                createdAt = now,
+                lastUpdatedAt = now,
+                parentId = "root",
+                lastSyncedAt = null,
+            )
+        )
+
+        val currentDocument = manager.currentDocument.filterNotNull().first()
+
+        assertEquals(updatedComments, currentDocument.commentConversations)
+    }
+
+    @Test
+    fun forceRestartClearsCommentConversations() = runTest {
+        val now = Clock.System.now()
+        val manager = WriteopiaStateManager.create(
+            writeopiaManager = WriteopiaManager(),
+            dispatcher = UnconfinedTestDispatcher(testScheduler),
+            userRepository = userRepository,
+        )
+
+        manager.loadDocument(
+            Document(
+                content = MapStoryData.singleMessage(),
+                commentConversations = mapOf(
+                    "conversation-1" to listOf(
+                        Comment(id = "comment-1", text = "Old comment")
+                    )
+                ),
+                workspaceId = "",
+                createdAt = now,
+                lastUpdatedAt = now,
+                parentId = "root",
+                lastSyncedAt = null,
+            )
+        )
+        manager.newDocument(forceRestart = true)
+
+        val currentDocument = manager.currentDocument.filterNotNull().first()
+
+        assertTrue(currentDocument.commentConversations.isEmpty())
     }
 }
