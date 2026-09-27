@@ -6,6 +6,8 @@ import writeopia.application.core.resources.generated.resources.Res
 import writeopia.application.core.resources.generated.resources.accent_color
 import writeopia.application.core.resources.generated.resources.access_local_ai_site
 import writeopia.application.core.resources.generated.resources.account
+import writeopia.application.core.resources.generated.resources.account_deletion_started_description
+import writeopia.application.core.resources.generated.resources.account_deletion_started_title
 import writeopia.application.core.resources.generated.resources.action_points
 import writeopia.application.core.resources.generated.resources.actions
 import writeopia.application.core.resources.generated.resources.add
@@ -61,6 +63,8 @@ import writeopia.application.core.resources.generated.resources.update_check_fai
 import writeopia.application.core.resources.generated.resources.update_open_failed
 import writeopia.application.core.resources.generated.resources.download_local_ai
 import writeopia.application.core.resources.generated.resources.email
+import writeopia.application.core.resources.generated.resources.email_or_username
+import writeopia.application.core.resources.generated.resources.email_to_confirm
 import writeopia.application.core.resources.generated.resources.error_loading_teams
 import writeopia.application.core.resources.generated.resources.error_loading_workspaces
 import writeopia.application.core.resources.generated.resources.error_model_download
@@ -137,6 +141,7 @@ import writeopia.application.core.resources.generated.resources.title
 import writeopia.application.core.resources.generated.resources.type_new_password
 import writeopia.application.core.resources.generated.resources.update_available
 import writeopia.application.core.resources.generated.resources.url
+import writeopia.application.core.resources.generated.resources.username
 import writeopia.application.core.resources.generated.resources.version
 import writeopia.application.core.resources.generated.resources.workspaceName
 import writeopia.application.core.resources.generated.resources.you_are_offline
@@ -227,6 +232,11 @@ import writeopia.application.core.resources.generated.resources.model_tier_mediu
 import writeopia.application.core.resources.generated.resources.model_tier_medium_description
 import writeopia.application.core.resources.generated.resources.model_tier_heavy
 import writeopia.application.core.resources.generated.resources.model_tier_heavy_description
+import writeopia.application.core.resources.generated.resources.add_comment
+import writeopia.application.core.resources.generated.resources.comment
+import writeopia.application.core.resources.generated.resources.comments_count
+import writeopia.application.core.resources.generated.resources.delete_thread
+import writeopia.application.core.resources.generated.resources.reply
 
 object WrStrings {
 
@@ -426,6 +436,9 @@ object WrStrings {
     fun name() = stringResource(Res.string.name)
 
     @Composable
+    fun username() = stringResource(Res.string.username)
+
+    @Composable
     fun font() = stringResource(Res.string.font)
 
     @Composable
@@ -489,6 +502,13 @@ object WrStrings {
     fun account() = stringResource(Res.string.account)
 
     @Composable
+    fun accountDeletionStartedTitle() = stringResource(Res.string.account_deletion_started_title)
+
+    @Composable
+    fun accountDeletionStartedDescription() =
+        stringResource(Res.string.account_deletion_started_description)
+
+    @Composable
     fun workspaceName() = stringResource(Res.string.workspaceName)
 
     @Composable
@@ -534,6 +554,9 @@ object WrStrings {
     fun email() = stringResource(Res.string.email)
 
     @Composable
+    fun emailOrUsername() = stringResource(Res.string.email_or_username)
+
+    @Composable
     fun company() = stringResource(Res.string.company)
 
     @Composable
@@ -555,7 +578,7 @@ object WrStrings {
     fun notesWillBeDeleted() = stringResource(Res.string.notes_will_be_deleted)
 
     @Composable
-    fun confirmEmail() = stringResource(Res.string.notes_will_be_deleted)
+    fun confirmEmail() = stringResource(Res.string.email_to_confirm)
 
     @Composable
     fun dismiss() = stringResource(Res.string.dismiss)
@@ -907,4 +930,19 @@ object WrStrings {
 
     @Composable
     fun modelTierHeavyDescription() = stringResource(Res.string.model_tier_heavy_description)
+
+    @Composable
+    fun addComment() = stringResource(Res.string.add_comment)
+
+    @Composable
+    fun comment() = stringResource(Res.string.comment)
+
+    @Composable
+    fun comments(count: Int) = stringResource(Res.string.comments_count, count)
+
+    @Composable
+    fun deleteThread() = stringResource(Res.string.delete_thread)
+
+    @Composable
+    fun reply() = stringResource(Res.string.reply)
 }
