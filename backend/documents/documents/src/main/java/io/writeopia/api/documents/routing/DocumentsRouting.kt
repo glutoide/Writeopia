@@ -11,7 +11,7 @@ import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.put
-import io.writeopia.api.core.auth.utils.getUserIdFromApiGateway
+import io.writeopia.api.core.auth.utils.requirePremiumUserId
 import io.writeopia.api.core.workspaces.utils.runIfMember
 import io.writeopia.api.documents.documents.DocumentsService
 import io.writeopia.api.documents.documents.TutorialsService
@@ -57,6 +57,7 @@ import kotlin.time.Instant
 
 //Todo: Add a check that only users or a workspace are allowed to interact with this endpoints.
 // They can only access the resources of the workspace
+// All authenticated endpoints require the user to be in the PREMIUM tier.
 fun Routing.documentsRoute(
     writeopiaDb: WriteopiaDbBackend,
     useAi: Boolean,
@@ -78,10 +79,7 @@ fun Routing.documentsRoute(
     }
 
     get("/api/docs/workspace/{workspaceId}/document/{id}") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@get
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@get
         val id = call.pathParameters["id"] ?: ""
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
@@ -103,10 +101,7 @@ fun Routing.documentsRoute(
     }
 
     get("/api/docs/workspace/{workspaceId}/document/title/{title}") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@get
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@get
         val title = call.pathParameters["title"] ?: ""
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
@@ -128,15 +123,14 @@ fun Routing.documentsRoute(
     }
 
     get("/api/docs/workspace/{workspaceId}/document/parent/{parentId}") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@get
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@get
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
             val parentId = call.pathParameters["parentId"]!!
-            val documentList = writeopiaDb.getDocumentsByParentId(parentId)
+            val documentList = writeopiaDb.getDocumentsByParentId(parentId, workspaceId)
+
+            logger.info("Documents by parent - parentId: $parentId, returning ${documentList.size} documents")
 
             if (documentList.isNotEmpty()) {
                 call.respond(
@@ -153,15 +147,12 @@ fun Routing.documentsRoute(
     }
 
     get("/api/docs/workspace/{workspaceId}/document/parent/{id}") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@get
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@get
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val id = call.pathParameters["id"]!!
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
-            val ids = writeopiaDb.getIdsByParentId(id)
+            val ids = writeopiaDb.getIdsByParentId(id, workspaceId)
 
             if (ids.isNotEmpty()) {
                 call.respond(
@@ -178,10 +169,7 @@ fun Routing.documentsRoute(
     }
 
     get("/api/docs/workspace/{workspaceId}/document/search") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@get
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@get
         val query = call.queryParameters["q"]
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
@@ -209,10 +197,7 @@ fun Routing.documentsRoute(
     }
 
     get("/api/docs/workspace/{workspaceId}/folder/{id}") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@get
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@get
         val id = call.pathParameters["id"]!!
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
@@ -234,17 +219,14 @@ fun Routing.documentsRoute(
     }
 
     get("/api/docs/workspace/{workspaceId}/folder/{folderId}/contents") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@get
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@get
         val folderId = call.pathParameters["folderId"]!!
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
             try {
-                val folders = writeopiaDb.getFoldersByParentId(folderId)
-                val documents = writeopiaDb.getDocumentsByParentId(folderId)
+                val folders = writeopiaDb.getFoldersByParentId(folderId, workspaceId)
+                val documents = writeopiaDb.getDocumentsByParentId(folderId, workspaceId)
 
                 // Get user's favorite document IDs
                 val userFavoriteIds = DocumentsService.getUserFavoriteDocumentIds(
@@ -257,6 +239,11 @@ fun Routing.documentsRoute(
                     doc.copy(favorite = isFavorite)
                 }
 
+                logger.info(
+                    "Folder contents - folderId: $folderId, workspaceId: $workspaceId, " +
+                        "returning ${folders.size} subfolders and ${documentsWithFavorites.size} documents"
+                )
+
                 call.respond(
                     status = HttpStatusCode.OK,
                     message = FolderContentResponse(
@@ -265,6 +252,7 @@ fun Routing.documentsRoute(
                     )
                 )
             } catch (e: Exception) {
+                logger.error("Error loading folder contents - folderId: $folderId, workspaceId: $workspaceId", e)
                 call.respond(
                     status = HttpStatusCode.InternalServerError,
                     message = "${e.message}"
@@ -274,10 +262,7 @@ fun Routing.documentsRoute(
     }
 
     post<CreateFolderRequest>("/api/docs/workspace/{workspaceId}/folder/{parentFolderId}/create") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val parentFolderId = call.pathParameters["parentFolderId"] ?: ""
 
@@ -305,10 +290,7 @@ fun Routing.documentsRoute(
     }
 
     put<UpdateFolderRequest>("/api/docs/workspace/{workspaceId}/folder/{folderId}") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@put
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@put
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val folderId = call.pathParameters["folderId"] ?: ""
 
@@ -348,23 +330,20 @@ fun Routing.documentsRoute(
     }
 
     post<SendDocumentsRequest>("/api/docs/workspace/document") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = request.workspaceId
-        val documentList = request.documents.map { document ->
-            document.copy(workspaceId = workspaceId)
-        }
+        val documentList = request.documents
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
             try {
                 if (documentList.isNotEmpty()) {
                     val addedToHub = DocumentsService.receiveDocuments(
                         documentList.map { document ->
-                            document
-                                .toModel()
-                                .copy(lastSyncedAt = Clock.System.now())
+                            DocumentsService.documentFromApiForWrite(
+                                document = document,
+                                workspaceId = workspaceId,
+                                writeopiaDb = writeopiaDb,
+                            ).copy(lastSyncedAt = Clock.System.now())
                         },
                         workspaceId = workspaceId,
                         writeopiaDb,
@@ -388,6 +367,11 @@ fun Routing.documentsRoute(
                         message = "Empty documents"
                     )
                 }
+            } catch (e: IllegalArgumentException) {
+                call.respond(
+                    status = HttpStatusCode.BadRequest,
+                    message = "${e.message}"
+                )
             } catch (e: Exception) {
                 call.respond(
                     status = HttpStatusCode.InternalServerError,
@@ -398,17 +382,16 @@ fun Routing.documentsRoute(
     }
 
     post<UpsertDocumentRequest>("/api/docs/workspace/{workspaceId}/document/upsert") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
             try {
-                val documentModel = request.document
-                    .copy(workspaceId = workspaceId)
-                    .toModel()
+                val documentModel = DocumentsService.documentFromApiForWrite(
+                    document = request.document,
+                    workspaceId = workspaceId,
+                    writeopiaDb = writeopiaDb,
+                )
 
                 val upsertedDocument = DocumentsService.upsertDocument(
                     document = documentModel,
@@ -420,6 +403,11 @@ fun Routing.documentsRoute(
                     status = HttpStatusCode.OK,
                     message = upsertedDocument.toApi()
                 )
+            } catch (e: IllegalArgumentException) {
+                call.respond(
+                    status = HttpStatusCode.BadRequest,
+                    message = "${e.message}"
+                )
             } catch (e: Exception) {
                 call.respond(
                     status = HttpStatusCode.InternalServerError,
@@ -430,10 +418,7 @@ fun Routing.documentsRoute(
     }
 
     post<SendFoldersRequest>("/api/docs/workspace/folder") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = request.workspaceId
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
@@ -466,7 +451,7 @@ fun Routing.documentsRoute(
                     )
                 }
             } catch (e: Exception) {
-                e.printStackTrace()
+                logger.error("Error receiving folders for workspace $workspaceId", e)
                 call.respond(
                     status = HttpStatusCode.InternalServerError,
                     message = "${e.message}"
@@ -476,18 +461,17 @@ fun Routing.documentsRoute(
     }
 
     post<FolderDiffRequest>("/api/docs/workspace/document/folder/diff") { folderDiff ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = folderDiff.workspaceId
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
             try {
-                println("loading folder diff")
-                println("user id: $userId")
-                println("last sync: ${Instant.fromEpochMilliseconds(folderDiff.lastFolderSync)}")
-                println("orderBy: ${folderDiff.orderBy}")
+                logger.info(
+                    "Folder diff request - folderId: ${folderDiff.folderId}, userId: $userId, " +
+                        "workspaceId: $workspaceId, " +
+                        "lastSync: ${Instant.fromEpochMilliseconds(folderDiff.lastFolderSync)}, " +
+                        "orderBy: ${folderDiff.orderBy}"
+                )
 
                 val documents =
                     DocumentsService.getDocumentsDiffByFolder(
@@ -499,7 +483,7 @@ fun Routing.documentsRoute(
                     )
 
                 // Get subfolders for this folder
-                val subfolders = writeopiaDb.getFoldersByParentId(folderDiff.folderId)
+                val subfolders = writeopiaDb.getFoldersByParentId(folderDiff.folderId, workspaceId)
 
                 // Get user's favorite document IDs
                 val userFavoriteIds = DocumentsService.getUserFavoriteDocumentIds(
@@ -511,6 +495,12 @@ fun Routing.documentsRoute(
                     doc.copy(favorite = userFavoriteIds.contains(doc.id))
                 }
 
+                logger.info(
+                    "Folder diff - folderId: ${folderDiff.folderId}, returning ${subfolders.size} subfolders " +
+                        "and ${documentsWithFavorites.size} documents " +
+                        "(${userFavoriteIds.size} user favorites)"
+                )
+
                 call.respond(
                     status = HttpStatusCode.OK,
                     message = FolderContentResponse(
@@ -519,6 +509,10 @@ fun Routing.documentsRoute(
                     )
                 )
             } catch (e: Exception) {
+                logger.error(
+                    "Error loading folder diff - folderId: ${folderDiff.folderId}, workspaceId: $workspaceId",
+                    e
+                )
                 call.respond(
                     status = HttpStatusCode.InternalServerError,
                     message = "${e.message}"
@@ -528,18 +522,16 @@ fun Routing.documentsRoute(
     }
 
     post<WorkspaceDiffRequest>("/api/docs/workspace/diff") { workspaceDiff ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = workspaceDiff.workspaceId
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
             try {
-                println("loading workspace diff")
-                println("user id: $userId")
-                println("last sync: ${Instant.fromEpochMilliseconds(workspaceDiff.lastSync)}")
-                println("orderBy: ${workspaceDiff.orderBy}")
+                logger.info(
+                    "Workspace diff request - userId: $userId, workspaceId: $workspaceId, " +
+                        "lastSync: ${Instant.fromEpochMilliseconds(workspaceDiff.lastSync)}, " +
+                        "orderBy: ${workspaceDiff.orderBy}"
+                )
 
                 val documents = DocumentsService.getDocumentsDiffByWorkspace(
                     workspaceDiff.workspaceId,
@@ -549,7 +541,10 @@ fun Routing.documentsRoute(
                 )
                 val folders = writeopiaDb.allFoldersByWorkspaceId(workspaceDiff.workspaceId)
 
-                println("returning ${documents.count()} documents and ${folders.count()} folders")
+                logger.info(
+                    "Workspace diff - workspaceId: $workspaceId, returning ${documents.size} documents " +
+                        "and ${folders.size} folders"
+                )
 
                 call.respond(
                     status = HttpStatusCode.OK,
@@ -559,6 +554,7 @@ fun Routing.documentsRoute(
                     )
                 )
             } catch (e: Exception) {
+                logger.error("Error loading workspace diff - workspaceId: $workspaceId", e)
                 call.respond(
                     status = HttpStatusCode.InternalServerError,
                     message = "${e.message}"
@@ -568,10 +564,7 @@ fun Routing.documentsRoute(
     }
 
     post("/api/docs/workspace/{workspaceId}/document/upload-image") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
@@ -588,10 +581,7 @@ fun Routing.documentsRoute(
     }
 
     delete("/api/docs/workspace/{workspaceId}/folder/{folderId}") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@delete
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@delete
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val folderId = call.pathParameters["folderId"] ?: ""
 
@@ -623,10 +613,7 @@ fun Routing.documentsRoute(
     }
 
     post<DeleteDocumentsRequest>("/api/docs/workspace/{workspaceId}/document/delete") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
@@ -645,6 +632,11 @@ fun Routing.documentsRoute(
                     status = HttpStatusCode.OK,
                     message = "Documents deleted successfully"
                 )
+            } catch (e: IllegalArgumentException) {
+                call.respond(
+                    status = HttpStatusCode.BadRequest,
+                    message = "${e.message}"
+                )
             } catch (e: Exception) {
                 call.respond(
                     status = HttpStatusCode.InternalServerError,
@@ -655,10 +647,7 @@ fun Routing.documentsRoute(
     }
 
     post<MoveFolderRequest>("/api/docs/workspace/{workspaceId}/folder/{folderId}/move") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val folderId = call.pathParameters["folderId"] ?: ""
 
@@ -703,10 +692,7 @@ fun Routing.documentsRoute(
     }
 
     post<CloneDocumentsRequest>("/api/docs/workspace/{workspaceId}/document/clone") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
@@ -740,10 +726,7 @@ fun Routing.documentsRoute(
     }
 
     post<GenerateSummaryRequest>("/api/docs/workspace/{workspaceId}/document/generate-summary") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
@@ -827,10 +810,7 @@ fun Routing.documentsRoute(
     }
 
     post<FavoriteDocumentRequest>("/api/docs/workspace/{workspaceId}/document/{documentId}/favorite") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val documentId = call.pathParameters["documentId"] ?: ""
 
@@ -868,10 +848,7 @@ fun Routing.documentsRoute(
     }
 
     post("/api/docs/workspace/{workspaceId}/document/{documentId}/publish") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val documentId = call.pathParameters["documentId"] ?: ""
 
@@ -903,10 +880,7 @@ fun Routing.documentsRoute(
     }
 
     post("/api/docs/workspace/{workspaceId}/document/{documentId}/unpublish") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val documentId = call.pathParameters["documentId"] ?: ""
 
@@ -938,10 +912,7 @@ fun Routing.documentsRoute(
     }
 
     get("/api/docs/workspace/{workspaceId}/document/{documentId}/published") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@get
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@get
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val documentId = call.pathParameters["documentId"] ?: ""
 
@@ -973,10 +944,7 @@ fun Routing.documentsRoute(
     }
 
     get("/api/docs/workspace/{workspaceId}/user/favorites") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@get
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@get
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
@@ -1001,10 +969,7 @@ fun Routing.documentsRoute(
     }
 
     post<StoryStepSyncRequest>("/api/docs/workspace/{workspaceId}/document/{documentId}/steps/sync") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val documentId = call.pathParameters["documentId"] ?: ""
 
@@ -1021,6 +986,11 @@ fun Routing.documentsRoute(
                     status = HttpStatusCode.OK,
                     message = response
                 )
+            } catch (e: IllegalArgumentException) {
+                call.respond(
+                    status = HttpStatusCode.BadRequest,
+                    message = "${e.message}"
+                )
             } catch (e: Exception) {
                 call.respond(
                     status = HttpStatusCode.InternalServerError,
@@ -1031,10 +1001,7 @@ fun Routing.documentsRoute(
     }
 
     post<EventDiffRequest>("/api/docs/workspace/events/diff") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = request.workspaceId
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
@@ -1072,10 +1039,7 @@ fun Routing.documentsRoute(
     }
 
     post<MoveDocumentRequest>("/api/docs/workspace/{workspaceId}/document/{documentId}/move") { request ->
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val documentId = call.pathParameters["documentId"] ?: ""
 
@@ -1120,10 +1084,7 @@ fun Routing.documentsRoute(
     }
 
     post("/api/docs/workspace/{workspaceId}/tutorials/initialize") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
 
         runIfMember(userId, workspaceId, writeopiaDb, debug) {
@@ -1155,10 +1116,7 @@ fun Routing.documentsRoute(
     }
 
     post("/api/docs/workspace/{workspaceId}/document/{documentId}/header") {
-        val userId = call.getUserIdFromApiGateway(debug) ?: run {
-            call.respond(HttpStatusCode.Unauthorized, "Authentication required")
-            return@post
-        }
+        val userId = call.requirePremiumUserId(writeopiaDb, debug) ?: return@post
         val workspaceId = call.pathParameters["workspaceId"] ?: ""
         val documentId = call.pathParameters["documentId"] ?: ""
 

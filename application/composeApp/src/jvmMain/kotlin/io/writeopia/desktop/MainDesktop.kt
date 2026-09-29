@@ -31,7 +31,6 @@ import io.writeopia.auth.navigation.startScreen
 import io.writeopia.common.utils.Destinations
 import io.writeopia.common.utils.keyboard.KeyboardCommands
 import io.writeopia.common.utils.keyboard.isMultiSelectionTrigger
-import io.writeopia.common.utils.ui.GlobalToastBox
 import io.writeopia.model.AccentColor
 import io.writeopia.model.isDarkTheme
 import io.writeopia.navigation.ScreenLoading
@@ -256,7 +255,7 @@ private fun ApplicationScope.App(onCloseRequest: () -> Unit = ::exitApplication)
                     darkTheme = colorTheme.value.isDarkTheme(),
                     accentColor = accentColor ?: AccentColor.PURPLE
                 ) {
-                    GlobalToastBox(
+                    Box(
                         modifier = Modifier
                             .background(WriteopiaTheme.colorScheme.globalBackground)
                     ) {
@@ -299,6 +298,15 @@ private fun ApplicationScope.App(onCloseRequest: () -> Unit = ::exitApplication)
                                             }
                                         }
                                     },
+                                    navigateToSpaceChoice = {
+                                        navigationController.navigate(
+                                            Destinations.WORKSPACE_TYPE_CHOICE.id
+                                        ) {
+                                            popUpTo(navigationController.graph.startDestinationId) {
+                                                inclusive = true
+                                            }
+                                        }
+                                    },
                                     navigateToAccountDeletionStarted = {
                                         navigationController.navigate(
                                             Destinations.ACCOUNT_DELETION_STARTED.id
@@ -314,8 +322,10 @@ private fun ApplicationScope.App(onCloseRequest: () -> Unit = ::exitApplication)
                             composable(route = Destinations.ACCOUNT_DELETION_STARTED.id) {
                                 AccountDeletionStartedScreen(
                                     logout = {
+                                        // Resets the nav graph back to START_APP so the login-state
+                                        // check re-runs and can land on the space-choice screen.
                                         navigationController.navigate(
-                                            Destinations.AUTH_MENU_INNER_NAVIGATION.id
+                                            Destinations.START_APP.id
                                         ) {
                                             popUpTo(navigationController.graph.startDestinationId) {
                                                 inclusive = true

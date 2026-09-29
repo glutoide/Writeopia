@@ -1,0 +1,252 @@
+package io.writeopia.core.folders.repository.folder
+
+import io.mockk.coEvery
+import io.mockk.coVerify
+import io.mockk.mockk
+import io.writeopia.auth.core.manager.AuthRepository
+import io.writeopia.core.folders.api.DocumentsApi
+import io.writeopia.core.folders.sync.DocumentMerger
+import io.writeopia.sdk.models.comment.Comment
+import io.writeopia.sdk.models.document.Document
+import io.writeopia.sdk.models.span.Span
+import io.writeopia.sdk.models.span.SpanInfo
+import io.writeopia.sdk.models.story.StoryStep
+import io.writeopia.sdk.models.story.StoryTypes
+import io.writeopia.sdk.models.utils.ResultData
+import io.writeopia.sdk.repository.DocumentRepository
+import kotlinx.coroutines.runBlocking
+import kotlin.test.Test
+import kotlin.test.assertEquals
+import kotlin.test.assertNotNull
+import kotlin.time.Instant
+
+class DocumentLoadUseCaseTest {
+
+    @Test
+    fun `comment-only backend change is saved and reported`() = runBlocking {
+        val documentRepository = mockk<DocumentRepository>(relaxed = true)
+        val documentsApi = mockk<DocumentsApi>()
+        val authRepository = mockk<AuthRepository>(relaxed = true)
+        val conversationId = "conversation-1"
+        val content = mapOf(
+            0.0 to StoryStep(
+                id = "step-1",
+                type = StoryTypes.TEXT.type,
+                text = "Text",
+                spans = setOf(SpanInfo.create(0, 4, Span.COMMENT, conversationId)),
+                lastUpdatedAt = 1,
+            )
+        )
+        val local = document(
+            lastUpdatedAt = 1,
+            content = content,
+            commentText = "Local comment",
+        )
+        val backend = document(
+            lastUpdatedAt = 2,
+            content = content,
+            commentText = "Backend comment",
+        )
+
+        coEvery { documentRepository.loadDocumentById(local.id, local.workspaceId) } returns local
+        coEvery { documentsApi.getDocumentById(local.id, local.workspaceId) } returns ResultData.Complete(backend)
+
+        val useCase = DocumentLoadUseCase(
+            documentRepository = documentRepository,
+            documentsApi = documentsApi,
+            documentMerger = DocumentMerger(),
+            authRepository = authRepository,
+        )
+        var reloaded: Document? = null
+
+        useCase.fetchAndMergeFromBackend(local.id, local.workspaceId) { merged ->
+            reloaded = merged
+        }
+
+        val merged = assertNotNull(reloaded)
+        assertEquals("Backend comment", merged.commentConversations.getValue(conversationId).single().text)
+        coVerify(exactly = 1) {
+            documentRepository.saveDocument(match { saved -> saved.commentConversations == merged.commentConversations })
+        }
+    }
+
+    @Test
+    fun `edit made while backend fetch is in flight should survive comment-only response`() = runBlocking {
+        val documentRepository = mockk<DocumentRepository>(relaxed = true)
+        val documentsApi = mockk<DocumentsApi>()
+        val authRepository = mockk<AuthRepository>(relaxed = true)
+        val conversationId = "conversation-1"
+        val initialStep = StoryStep(
+            id = "step-1",
+            type = StoryTypes.TEXT.type,
+            text = "C0",
+            spans = setOf(SpanInfo.create(0, 2, Span.COMMENT, conversationId)),
+            lastUpdatedAt = 1,
+        )
+        val local = document(
+            lastUpdatedAt = 1,
+            content = mapOf(0.0 to initialStep),
+            commentText = "Local comment",
+        )
+        val backend = document(
+            lastUpdatedAt = 2,
+            content = mapOf(0.0 to initialStep.copy(lastUpdatedAt = 2)),
+            commentText = "Remote comment",
+        )
+        var editorDocument = local
+
+        coEvery { documentRepository.loadDocumentById(local.id, local.workspaceId) } returns local
+        coEvery { documentsApi.getDocumentById(local.id, local.workspaceId) } coAnswers {
+            editorDocument = editorDocument.copy(
+                content = mapOf(
+                    0.0 to initialStep.copy(text = "C1")
+                )
+            )
+            ResultData.Complete(backend)
+        }
+
+        val useCase = DocumentLoadUseCase(
+            documentRepository = documentRepository,
+            documentsApi = documentsApi,
+            documentMerger = DocumentMerger(),
+            authRepository = authRepository,
+        )
+        var reloaded: Document? = null
+
+        useCase.fetchAndMergeFromBackend(
+            documentId = local.id,
+            workspaceId = local.workspaceId,
+            currentLocalDocument = { editorDocument },
+        ) { merged ->
+            reloaded = merged
+        }
+
+        val merged = assertNotNull(reloaded)
+        assertEquals("C1", merged.content.values.single().text)
+        assertEquals(
+            "Remote comment",
+            merged.commentConversations.getValue(conversationId).single().text,
+        )
+    }
+
+    @Test
+    fun `edit made after backend snapshot during local reload should survive`() = runBlocking {
+        val documentRepository = mockk<DocumentRepository>(relaxed = true)
+        val documentsApi = mockk<DocumentsApi>()
+        val authRepository = mockk<AuthRepository>(relaxed = true)
+        val conversationId = "conversation-1"
+        val initialStep = StoryStep(
+            id = "step-1",
+            type = StoryTypes.TEXT.type,
+            text = "C0",
+            spans = setOf(SpanInfo.create(0, 2, Span.COMMENT, conversationId)),
+            lastUpdatedAt = 1,
+        )
+        val local = document(
+            lastUpdatedAt = 1,
+            content = mapOf(0.0 to initialStep),
+            commentText = "Local comment",
+        )
+        val backend = document(
+            lastUpdatedAt = 2,
+            content = mapOf(0.0 to initialStep.copy(lastUpdatedAt = 2)),
+            commentText = "Remote comment",
+        )
+        val localReply = Comment(id = "comment-2", text = "Local reply")
+        var editorDocument = local
+
+        coEvery { documentsApi.getDocumentById(local.id, local.workspaceId) } returns
+            ResultData.Complete(backend)
+        coEvery { documentRepository.loadDocumentById(local.id, local.workspaceId) } coAnswers {
+            editorDocument = editorDocument.copy(
+                content = mapOf(
+                    0.0 to initialStep.copy(text = "C2")
+                ),
+                commentConversations = mapOf(
+                    conversationId to (
+                        editorDocument.commentConversations.getValue(conversationId) + localReply
+                    )
+                ),
+            )
+            local
+        }
+
+        val useCase = DocumentLoadUseCase(
+            documentRepository = documentRepository,
+            documentsApi = documentsApi,
+            documentMerger = DocumentMerger(),
+            authRepository = authRepository,
+        )
+        var reloaded: Document? = null
+
+        useCase.fetchAndMergeFromBackend(
+            documentId = local.id,
+            workspaceId = local.workspaceId,
+            currentLocalDocument = { editorDocument },
+        ) { merged ->
+            reloaded = merged
+        }
+
+        val merged = assertNotNull(reloaded)
+        assertEquals("C2", merged.content.values.single().text)
+        assertEquals(
+            setOf("comment-1", "comment-2"),
+            merged.commentConversations.getValue(conversationId)
+                .map { comment -> comment.id }
+                .toSet(),
+        )
+        assertEquals(
+            "Remote comment",
+            merged.commentConversations.getValue(conversationId)
+                .single { comment -> comment.id == "comment-1" }
+                .text,
+        )
+    }
+
+    @Test
+    fun `backend document with mismatched identity is ignored`() = runBlocking {
+        val documentRepository = mockk<DocumentRepository>(relaxed = true)
+        val documentsApi = mockk<DocumentsApi>()
+        val authRepository = mockk<AuthRepository>(relaxed = true)
+        val backend = document(
+            lastUpdatedAt = 2,
+            content = emptyMap(),
+            commentText = "Backend comment",
+        ).copy(workspaceId = "other-workspace")
+
+        coEvery { documentRepository.loadDocumentById("document-1", "workspace-1") } returns null
+        coEvery { documentsApi.getDocumentById("document-1", "workspace-1") } returns
+            ResultData.Complete(backend)
+
+        val useCase = DocumentLoadUseCase(
+            documentRepository = documentRepository,
+            documentsApi = documentsApi,
+            documentMerger = DocumentMerger(),
+            authRepository = authRepository,
+        )
+
+        useCase.fetchAndMergeFromBackend("document-1", "workspace-1") {
+            error("Mismatched backend document must not be merged")
+        }
+
+        coVerify(exactly = 0) { documentRepository.saveDocument(any()) }
+    }
+
+    private fun document(
+        lastUpdatedAt: Long,
+        content: Map<Double, StoryStep>,
+        commentText: String,
+    ) = Document(
+        id = "document-1",
+        title = "Document",
+        content = content,
+        createdAt = Instant.fromEpochMilliseconds(0),
+        lastUpdatedAt = Instant.fromEpochMilliseconds(lastUpdatedAt),
+        lastSyncedAt = null,
+        workspaceId = "workspace-1",
+        parentId = "root",
+        commentConversations = mapOf(
+            "conversation-1" to listOf(Comment(id = "comment-1", text = commentText))
+        ),
+    )
+}

@@ -6,19 +6,29 @@ import io.writeopia.sdk.filter.DocumentFilter
 import io.writeopia.sdk.filter.DocumentFilterObject
 import io.writeopia.sdk.manager.DocumentTracker
 import io.writeopia.sdk.manager.DocumentUpdate
+import io.writeopia.sdk.manager.UnsupportedCommentConversationsException
 import io.writeopia.sdk.model.document.DocumentInfo
 import io.writeopia.sdk.model.story.LastEdit
 import io.writeopia.sdk.model.story.StoryState
+import io.writeopia.sdk.models.comment.Comment
 import io.writeopia.sdk.models.document.Document
 import io.writeopia.sdk.models.id.GenerateId
+import io.writeopia.sdk.models.span.Span
 import io.writeopia.sdk.models.story.StoryStep
 import io.writeopia.sdk.models.story.StoryTypes
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
+
+private fun StoryStep.containsCommentSpanRecursively(): Boolean =
+    spans.any { span -> span.span == Span.COMMENT } ||
+        steps.any { step -> step.containsCommentSpanRecursively() }
 
 class OnUpdateDocumentTracker(
     private val documentUpdate: DocumentUpdate,
@@ -31,20 +41,285 @@ class OnUpdateDocumentTracker(
         documentEditionFlow: Flow<Pair<StoryState, DocumentInfo>>,
         workspaceIdFlow: Flow<String>,
     ) {
+        val commentFreeDocumentEditionFlow = documentEditionFlow.onEach { (storyState, _) ->
+            val hasCommentSpans = storyState.stories.values.any { story ->
+                story.containsCommentSpanRecursively()
+            }
+            if (hasCommentSpans) {
+                throw UnsupportedCommentConversationsException(
+                    "Comment-bearing documents require the comment-aware saveOnStoryChanges overload."
+                )
+            }
+        }
+
+        saveOnStoryChanges(
+            commentFreeDocumentEditionFlow,
+            workspaceIdFlow,
+            MutableStateFlow(emptyMap()),
+        )
+    }
+
+    override suspend fun saveOnStoryChanges(
+        documentEditionFlow: Flow<Pair<StoryState, DocumentInfo>>,
+        workspaceIdFlow: Flow<String>,
+        commentConversationsFlow: StateFlow<Map<String, List<Comment>>>,
+    ) {
+        var previousCommentConversations: Map<String, List<Comment>>? = null
+        var lastLineEditSource: LastEdit.LineEdition? = null
+        var lastStampedLineEdit: LastEdit.LineEdition? = null
+        var lastInfoEditSource: LastEdit.InfoEdition? = null
+        var lastStampedInfoEdit: LastEdit.InfoEdition? = null
+        var lastLineBreakEditSource: LastEdit.LineBreakEdition? = null
+        var lastStampedLineBreakEdit: LastEdit.LineBreakEdition? = null
+        var lastBulkEditSource: LastEdit.BulkEdition? = null
+        var lastStampedBulkEdit: LastEdit.BulkEdition? = null
+        var lastEraseEditSource: LastEdit.EraseEdition? = null
+        var lastStampedEraseEdit: LastEdit.EraseEdition? = null
+
+        fun fullDocument(
+            storyState: StoryState,
+            documentInfo: DocumentInfo,
+            workspaceId: String,
+            commentConversations: Map<String, List<Comment>>,
+        ): Document {
+            val stories = storyState.stories.filter { (_, story) -> !story.ephemeral }
+            val titleFromContent = stories.values
+                .firstOrNull { storyStep -> storyStep.type == StoryTypes.TITLE.type }
+                ?.text
+
+            return Document(
+                id = documentInfo.id,
+                title = titleFromContent ?: documentInfo.title,
+                content = documentFilter.removeTypesFromDocument(stories),
+                createdAt = documentInfo.createdAt,
+                lastUpdatedAt = Clock.System.now(),
+                lastSyncedAt = documentInfo.lastSyncedAt,
+                workspaceId = workspaceId,
+                parentId = documentInfo.parentId,
+                icon = documentInfo.icon,
+                isLocked = documentInfo.isLocked,
+                favorite = documentInfo.isFavorite,
+                commentConversations = commentConversations,
+            )
+        }
+
         combine(
             documentEditionFlow,
-            workspaceIdFlow
-        ) { (storyState, documentInfo), workspaceId ->
-            Triple(storyState, documentInfo, workspaceId)
-        }.collect { (storyState, documentInfo, workspaceId) ->
-            when (val lastEdit = storyState.lastEdit) {
+            workspaceIdFlow,
+            commentConversationsFlow,
+        ) { documentEdition, workspaceId, commentConversations ->
+            Triple(documentEdition, workspaceId, commentConversations)
+        }.collect { (documentEdition, workspaceId, commentConversations) ->
+            val (storyState, documentInfo) = documentEdition
+            val persistedStoryState = when (val lastEdit = storyState.lastEdit) {
+                is LastEdit.LineEdition -> {
+                    lastInfoEditSource = null
+                    lastStampedInfoEdit = null
+                    lastLineBreakEditSource = null
+                    lastStampedLineBreakEdit = null
+                    lastBulkEditSource = null
+                    lastStampedBulkEdit = null
+                    lastEraseEditSource = null
+                    lastStampedEraseEdit = null
+                    val stampedLineEdit = if (lastEdit === lastLineEditSource) {
+                        checkNotNull(lastStampedLineEdit)
+                    } else {
+                        lastEdit.copy(
+                            storyStep = lastEdit.storyStep.copy(
+                                localId = GenerateId.generate(),
+                                lastUpdatedAt = Clock.System.now().toEpochMilliseconds(),
+                            )
+                        ).also { stamped ->
+                            lastLineEditSource = lastEdit
+                            lastStampedLineEdit = stamped
+                        }
+                    }
+                    storyState.copy(
+                        stories = storyState.stories + (
+                            stampedLineEdit.position to stampedLineEdit.storyStep
+                        ),
+                        lastEdit = stampedLineEdit,
+                    )
+                }
+
+                is LastEdit.InfoEdition -> {
+                    lastLineEditSource = null
+                    lastStampedLineEdit = null
+                    lastLineBreakEditSource = null
+                    lastStampedLineBreakEdit = null
+                    lastBulkEditSource = null
+                    lastStampedBulkEdit = null
+                    lastEraseEditSource = null
+                    lastStampedEraseEdit = null
+                    val stampedInfoEdit = if (lastEdit === lastInfoEditSource) {
+                        checkNotNull(lastStampedInfoEdit)
+                    } else {
+                        lastEdit.copy(
+                            storyStep = lastEdit.storyStep.copy(
+                                lastUpdatedAt = Clock.System.now().toEpochMilliseconds(),
+                            )
+                        ).also { stamped ->
+                            lastInfoEditSource = lastEdit
+                            lastStampedInfoEdit = stamped
+                        }
+                    }
+                    storyState.copy(
+                        stories = storyState.stories + (
+                            stampedInfoEdit.position to stampedInfoEdit.storyStep
+                        ),
+                        lastEdit = stampedInfoEdit,
+                    )
+                }
+
+                is LastEdit.LineBreakEdition -> {
+                    lastLineEditSource = null
+                    lastStampedLineEdit = null
+                    lastInfoEditSource = null
+                    lastStampedInfoEdit = null
+                    lastBulkEditSource = null
+                    lastStampedBulkEdit = null
+                    lastEraseEditSource = null
+                    lastStampedEraseEdit = null
+
+                    val stampedLineBreak = if (lastEdit === lastLineBreakEditSource) {
+                        checkNotNull(lastStampedLineBreakEdit)
+                    } else if (
+                        !lastEdit.originalStep.second.ephemeral &&
+                        !lastEdit.newStep.second.ephemeral
+                    ) {
+                        val timestamp = Clock.System.now().toEpochMilliseconds()
+                        lastEdit.copy(
+                            originalStep = lastEdit.originalStep.first to
+                                lastEdit.originalStep.second.copy(lastUpdatedAt = timestamp),
+                            newStep = lastEdit.newStep.first to
+                                lastEdit.newStep.second.copy(lastUpdatedAt = timestamp),
+                        ).also { stamped ->
+                            lastLineBreakEditSource = lastEdit
+                            lastStampedLineBreakEdit = stamped
+                        }
+                    } else {
+                        lastEdit.also {
+                            lastLineBreakEditSource = lastEdit
+                            lastStampedLineBreakEdit = it
+                        }
+                    }
+
+                    storyState.copy(
+                        stories = storyState.stories + listOf(
+                            stampedLineBreak.originalStep,
+                            stampedLineBreak.newStep,
+                        ),
+                        lastEdit = stampedLineBreak,
+                    )
+                }
+
+                is LastEdit.BulkEdition -> {
+                    lastLineEditSource = null
+                    lastStampedLineEdit = null
+                    lastInfoEditSource = null
+                    lastStampedInfoEdit = null
+                    lastLineBreakEditSource = null
+                    lastStampedLineBreakEdit = null
+                    lastEraseEditSource = null
+                    lastStampedEraseEdit = null
+
+                    val stampedBulk = if (lastEdit === lastBulkEditSource) {
+                        checkNotNull(lastStampedBulkEdit)
+                    } else {
+                        val timestamp = Clock.System.now().toEpochMilliseconds()
+                        lastEdit.copy(
+                            steps = lastEdit.steps.map { (position, step) ->
+                                position to if (step.ephemeral) {
+                                    step
+                                } else {
+                                    step.copy(lastUpdatedAt = timestamp)
+                                }
+                            }
+                        ).also { stamped ->
+                            lastBulkEditSource = lastEdit
+                            lastStampedBulkEdit = stamped
+                        }
+                    }
+
+                    storyState.copy(
+                        stories = storyState.stories + stampedBulk.steps,
+                        lastEdit = stampedBulk,
+                    )
+                }
+
+                is LastEdit.EraseEdition -> {
+                    lastLineEditSource = null
+                    lastStampedLineEdit = null
+                    lastInfoEditSource = null
+                    lastStampedInfoEdit = null
+                    lastLineBreakEditSource = null
+                    lastStampedLineBreakEdit = null
+                    lastBulkEditSource = null
+                    lastStampedBulkEdit = null
+
+                    val stampedErase = if (lastEdit === lastEraseEditSource) {
+                        checkNotNull(lastStampedEraseEdit)
+                    } else {
+                        val (position, step) = lastEdit.updatedStep
+                        lastEdit.copy(
+                            updatedStep = position to if (step.ephemeral) {
+                                step
+                            } else {
+                                step.copy(
+                                    lastUpdatedAt = Clock.System.now().toEpochMilliseconds()
+                                )
+                            }
+                        ).also { stamped ->
+                            lastEraseEditSource = lastEdit
+                            lastStampedEraseEdit = stamped
+                        }
+                    }
+
+                    storyState.copy(
+                        stories = storyState.stories + stampedErase.updatedStep,
+                        lastEdit = stampedErase,
+                    )
+                }
+
+                else -> {
+                    lastLineEditSource = null
+                    lastStampedLineEdit = null
+                    lastInfoEditSource = null
+                    lastStampedInfoEdit = null
+                    lastLineBreakEditSource = null
+                    lastStampedLineBreakEdit = null
+                    lastBulkEditSource = null
+                    lastStampedBulkEdit = null
+                    lastEraseEditSource = null
+                    lastStampedEraseEdit = null
+                    storyState
+                }
+            }
+            val commentsChanged = previousCommentConversations?.let { previous ->
+                previous != commentConversations
+            } ?: false
+            previousCommentConversations = commentConversations
+
+            if (commentsChanged) {
+                withContext(NonCancellable) {
+                    val document = fullDocument(
+                        persistedStoryState,
+                        documentInfo,
+                        workspaceId,
+                        commentConversations,
+                    )
+                    documentUpdate.saveDocument(document)
+                    onDocumentUpdate(document)
+                }
+                return@collect
+            }
+
+            when (val lastEdit = persistedStoryState.lastEdit) {
                 is LastEdit.LineEdition -> {
                     if (lastEdit.storyStep.ephemeral) return@collect
 
                     documentUpdate.saveStoryStep(
-                        storyStep = lastEdit.storyStep.copy(
-                            localId = GenerateId.generate()
-                        ),
+                        storyStep = lastEdit.storyStep,
                         position = lastEdit.position,
                         documentId = documentInfo.id,
                     )
@@ -77,27 +352,12 @@ class OnUpdateDocumentTracker(
                 LastEdit.Nothing -> {}
 
                 LastEdit.Whole -> withContext(NonCancellable) {
-                    val stories = storyState.stories.filter { (_, story) -> !story.ephemeral }
-                    val titleFromContent = stories.values
-                        .firstOrNull { storyStep ->
-                            // Todo: Change the type of change to allow different types. The client code should decide what is a title
-                            // It is also interesting to inv
-                            storyStep.type == StoryTypes.TITLE.type
-                        }?.text
-
-                    val document = Document(
-                        id = documentInfo.id,
-                        title = titleFromContent ?: documentInfo.title,
-                        content = documentFilter.removeTypesFromDocument(stories),
-                        createdAt = documentInfo.createdAt,
-                        lastUpdatedAt = Clock.System.now(),
-                        lastSyncedAt = documentInfo.lastSyncedAt,
-                        workspaceId = workspaceId,
-                        parentId = documentInfo.parentId,
-                        icon = documentInfo.icon,
-                        isLocked = documentInfo.isLocked
+                    val document = fullDocument(
+                        storyState,
+                        documentInfo,
+                        workspaceId,
+                        commentConversations,
                     )
-
                     documentUpdate.saveDocument(document)
                     onDocumentUpdate(document)
                 }
@@ -192,7 +452,8 @@ class OnUpdateDocumentTracker(
                 }
 
                 is LastEdit.BulkEdition -> withContext(NonCancellable) {
-                    val nonEphemeralSteps = lastEdit.steps.filter { (_, step) -> !step.ephemeral }
+                    val nonEphemeralSteps = lastEdit.steps
+                        .filter { (_, step) -> !step.ephemeral }
 
                     if (nonEphemeralSteps.isNotEmpty()) {
                         documentUpdate.saveStorySteps(

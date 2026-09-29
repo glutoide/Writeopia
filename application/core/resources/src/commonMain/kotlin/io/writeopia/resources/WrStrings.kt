@@ -4,7 +4,6 @@ import androidx.compose.runtime.Composable
 import org.jetbrains.compose.resources.stringResource
 import writeopia.application.core.resources.generated.resources.Res
 import writeopia.application.core.resources.generated.resources.accent_color
-import writeopia.application.core.resources.generated.resources.access_local_ai_site
 import writeopia.application.core.resources.generated.resources.account
 import writeopia.application.core.resources.generated.resources.account_deletion_started_description
 import writeopia.application.core.resources.generated.resources.account_deletion_started_title
@@ -55,13 +54,11 @@ import writeopia.application.core.resources.generated.resources.delete
 import writeopia.application.core.resources.generated.resources.delete_account
 import writeopia.application.core.resources.generated.resources.dismiss
 import writeopia.application.core.resources.generated.resources.document
-import writeopia.application.core.resources.generated.resources.dont_show_again
 import writeopia.application.core.resources.generated.resources.download_model
 import writeopia.application.core.resources.generated.resources.download_models
 import writeopia.application.core.resources.generated.resources.download_update
 import writeopia.application.core.resources.generated.resources.update_check_failed
 import writeopia.application.core.resources.generated.resources.update_open_failed
-import writeopia.application.core.resources.generated.resources.download_local_ai
 import writeopia.application.core.resources.generated.resources.email
 import writeopia.application.core.resources.generated.resources.email_or_username
 import writeopia.application.core.resources.generated.resources.email_to_confirm
@@ -106,15 +103,13 @@ import writeopia.application.core.resources.generated.resources.no_models
 import writeopia.application.core.resources.generated.resources.notes_will_be_deleted
 import writeopia.application.core.resources.generated.resources.ok
 import writeopia.application.core.resources.generated.resources.local_ai
-import writeopia.application.core.resources.generated.resources.local_ai_configuration_complete
-import writeopia.application.core.resources.generated.resources.onboarding_explain1
-import writeopia.application.core.resources.generated.resources.onboarding_hello
-import writeopia.application.core.resources.generated.resources.onboarding_select_ai
+import writeopia.application.core.resources.generated.resources.local_ai_setup_description
+import writeopia.application.core.resources.generated.resources.local_ai_setup_title
+import writeopia.application.core.resources.generated.resources.continue_to_app
 import writeopia.application.core.resources.generated.resources.or_word
 import writeopia.application.core.resources.generated.resources.page
 import writeopia.application.core.resources.generated.resources.password
 import writeopia.application.core.resources.generated.resources.reset_password
-import writeopia.application.core.resources.generated.resources.private_ai_enabled
 import writeopia.application.core.resources.generated.resources.recent
 import writeopia.application.core.resources.generated.resources.repeat_password
 import writeopia.application.core.resources.generated.resources.retry
@@ -123,7 +118,6 @@ import writeopia.application.core.resources.generated.resources.search_no_result
 import writeopia.application.core.resources.generated.resources.settings
 import writeopia.application.core.resources.generated.resources.sign_in
 import writeopia.application.core.resources.generated.resources.sign_in_account
-import writeopia.application.core.resources.generated.resources.small_robot
 import writeopia.application.core.resources.generated.resources.sort_by_creation
 import writeopia.application.core.resources.generated.resources.sort_by_name
 import writeopia.application.core.resources.generated.resources.sort_by_update
@@ -145,7 +139,16 @@ import writeopia.application.core.resources.generated.resources.username
 import writeopia.application.core.resources.generated.resources.version
 import writeopia.application.core.resources.generated.resources.workspaceName
 import writeopia.application.core.resources.generated.resources.you_are_offline
-import writeopia.application.core.resources.generated.resources.use_offline
+import writeopia.application.core.resources.generated.resources.choose_your_space
+import writeopia.application.core.resources.generated.resources.where_writing_today
+import writeopia.application.core.resources.generated.resources.private_space_label
+import writeopia.application.core.resources.generated.resources.private_space_title
+import writeopia.application.core.resources.generated.resources.private_space_description
+import writeopia.application.core.resources.generated.resources.open_space_label
+import writeopia.application.core.resources.generated.resources.open_space_title
+import writeopia.application.core.resources.generated.resources.open_space_description
+import writeopia.application.core.resources.generated.resources.enter_arrow
+import writeopia.application.core.resources.generated.resources.switch_space
 import writeopia.application.core.resources.generated.resources.user_email
 import writeopia.application.core.resources.generated.resources.your_teams
 import writeopia.application.core.resources.generated.resources.drawing
@@ -232,6 +235,11 @@ import writeopia.application.core.resources.generated.resources.model_tier_mediu
 import writeopia.application.core.resources.generated.resources.model_tier_medium_description
 import writeopia.application.core.resources.generated.resources.model_tier_heavy
 import writeopia.application.core.resources.generated.resources.model_tier_heavy_description
+import writeopia.application.core.resources.generated.resources.add_comment
+import writeopia.application.core.resources.generated.resources.comment
+import writeopia.application.core.resources.generated.resources.comments_count
+import writeopia.application.core.resources.generated.resources.delete_thread
+import writeopia.application.core.resources.generated.resources.reply
 
 object WrStrings {
 
@@ -440,31 +448,7 @@ object WrStrings {
     fun actions() = stringResource(Res.string.actions)
 
     @Composable
-    fun onboardingHello() = stringResource(Res.string.onboarding_hello)
-
-    @Composable
-    fun onboardingTutorialExplain() = stringResource(Res.string.onboarding_explain1)
-
-    @Composable
-    fun onboardingChooseAi() = stringResource(Res.string.onboarding_select_ai)
-
-    @Composable
     fun close() = stringResource(Res.string.close)
-
-    @Composable
-    fun downloadLocalAi() = stringResource(Res.string.download_local_ai)
-
-    @Composable
-    fun accessLocalAiSite() = stringResource(Res.string.access_local_ai_site)
-
-    @Composable
-    fun localAiConfigComplete() = stringResource(Res.string.local_ai_configuration_complete)
-
-    @Composable
-    fun privateAiEnabled() = stringResource(Res.string.private_ai_enabled)
-
-    @Composable
-    fun smallRobot() = stringResource(Res.string.small_robot)
 
     @Composable
     fun copyDocument() = stringResource(Res.string.copy_note)
@@ -588,7 +572,43 @@ object WrStrings {
     fun writeYourAiModel() = stringResource(Res.string.choose_your_model)
 
     @Composable
-    fun useOffline() = stringResource(Res.string.use_offline)
+    fun chooseYourSpace() = stringResource(Res.string.choose_your_space)
+
+    @Composable
+    fun whereWritingToday() = stringResource(Res.string.where_writing_today)
+
+    @Composable
+    fun localAiSetupTitle() = stringResource(Res.string.local_ai_setup_title)
+
+    @Composable
+    fun localAiSetupDescription() = stringResource(Res.string.local_ai_setup_description)
+
+    @Composable
+    fun continueToApp() = stringResource(Res.string.continue_to_app)
+
+    @Composable
+    fun privateSpaceLabel() = stringResource(Res.string.private_space_label)
+
+    @Composable
+    fun privateSpaceTitle() = stringResource(Res.string.private_space_title)
+
+    @Composable
+    fun privateSpaceDescription() = stringResource(Res.string.private_space_description)
+
+    @Composable
+    fun openSpaceLabel() = stringResource(Res.string.open_space_label)
+
+    @Composable
+    fun openSpaceTitle() = stringResource(Res.string.open_space_title)
+
+    @Composable
+    fun openSpaceDescription() = stringResource(Res.string.open_space_description)
+
+    @Composable
+    fun enterArrow() = stringResource(Res.string.enter_arrow)
+
+    @Composable
+    fun switchSpace() = stringResource(Res.string.switch_space)
 
     @Composable
     fun aiExplanation() = stringResource(Res.string.ai_explanation)
@@ -604,9 +624,6 @@ object WrStrings {
 
     @Composable
     fun heading() = stringResource(Res.string.heading)
-
-    @Composable
-    fun dontShowAgain() = stringResource(Res.string.dont_show_again)
 
     @Composable
     fun manageTeams() = stringResource(Res.string.manage_teams)
@@ -925,4 +942,19 @@ object WrStrings {
 
     @Composable
     fun modelTierHeavyDescription() = stringResource(Res.string.model_tier_heavy_description)
+
+    @Composable
+    fun addComment() = stringResource(Res.string.add_comment)
+
+    @Composable
+    fun comment() = stringResource(Res.string.comment)
+
+    @Composable
+    fun comments(count: Int) = stringResource(Res.string.comments_count, count)
+
+    @Composable
+    fun deleteThread() = stringResource(Res.string.delete_thread)
+
+    @Composable
+    fun reply() = stringResource(Res.string.reply)
 }

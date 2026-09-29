@@ -96,15 +96,7 @@
   <string name="tap_to_start">Tap here to <font fgcolor='#FFFF3B30'>write</font> the next big thing</string>
   <string name="font">Font</string>
   <string name="actions">Actions</string>
-  <string name="onboarding_hello">Hello, welcome!</string>
-  <string name="onboarding_explain1">Follow the tutorial to use AI privately.</string>
-  <string name="onboarding_select_ai">Select one AI that you would like to use.</string>
   <string name="close">Close</string>
-  <string name="download_local_ai">To use AI, download Ollama</string>
-  <string name="access_local_ai_site">Access ollama.com</string>
-  <string name="local_ai_configuration_complete">Configuration completed!</string>
-  <string name="private_ai_enabled">You can write now using private AI</string>
-  <string name="small_robot">Small robot</string>
   <string name="document">Document</string>
   <string name="confirmation_delete_multiple_items">Are you sure you would like to delete the selected items?</string>
   <string name="cancel">Cancel</string>
@@ -139,13 +131,24 @@
   <string name="confirm">Confirm</string>
   <string name="download_model">Download model</string>
   <string name="choose_your_model">Write your AI model</string>
-  <string name="use_offline">Use in offline mode</string>
+  <string name="choose_your_space">Choose your space</string>
+  <string name="where_writing_today">Where are you writing today?</string>
+  <string name="private_space_label">Private space — offline</string>
+  <string name="private_space_title">Nothing ever leaves the room.</string>
+  <string name="private_space_description">Ollama runs on your hardware. No request, no telemetry, no cloud. Pull the ethernet cable and it still writes.</string>
+  <string name="open_space_label">Open space — connected</string>
+  <string name="open_space_title">Bring in the big brains.</string>
+  <string name="open_space_description">Frontier models for the drafts that deserve them. Bring your own key, swap providers mid-document, never get locked to one vendor.</string>
+  <string name="enter_arrow">Enter →</string>
+  <string name="switch_space">Switch space</string>
+  <string name="local_ai_setup_title">Set up your local AI</string>
+  <string name="local_ai_setup_description">Configure Ollama or llmman now, or skip and do it later from Settings.</string>
+  <string name="continue_to_app">Continue</string>
   <string name="ai_explanation">[Tab - accept; Esc - remove]</string>
   <string name="ai_model">AI Model</string>
   <string name="title">Title</string>
   <string name="subtitle">Subtitle</string>
   <string name="heading">Heading</string>
-  <string name="dont_show_again">Don't show again</string>
   <string name="manage_teams">Manage teams</string>
   <string name="error_loading_teams">Error loading teams</string>
   <string name="error_loading_workspaces">Error loading workspaces</string>
@@ -252,4 +255,9 @@
   <string name="model_tier_medium_description">Balanced performance for most use cases</string>
   <string name="model_tier_heavy">Heavy</string>
   <string name="model_tier_heavy_description">Maximum quality for complex tasks</string>
+  <string name="add_comment">Add comment</string>
+  <string name="comment">Comment</string>
+  <string name="comments_count">Comments (%1$d)</string>
+  <string name="delete_thread">Delete thread</string>
+  <string name="reply">Reply</string>
 </resources>
