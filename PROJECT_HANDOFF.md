@@ -1,5 +1,7 @@
 # PROJECT_HANDOFF.md
 
+
+Long-lived project history: `PROJECT_HISTORY.md`. On chat transition read only its `History index`; open archived details only when relevant.
 ## Current state
 
 Active upstream contribution work is issue #828 in `Writeopia/Writeopia`. The canonical detailed current state is maintained in `Glutoide-lab/project-memory/WRITEOPIA_HANDOFF_CURRENT.md`.
