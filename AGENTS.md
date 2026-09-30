@@ -10,6 +10,7 @@ This repository follows the shared rules in `Glutoide-lab/project-memory/AGENTS.
 - Keep changes scoped to the active upstream issue/PR; do not change CI/CD, release, auth, or unrelated architecture without a concrete blocker.
 - For issue #828, preserve the established stack order: `#830 -> #831 -> #832 -> #835 -> #836`.
 - The canonical live handoff for the current Writeopia contribution work is `Glutoide-lab/project-memory/WRITEOPIA_HANDOFF_CURRENT.md`.
+- The canonical long-lived history is `Glutoide-lab/project-memory/WRITEOPIA_HISTORY.md`; on chat transition read only its `History index`, not the archived body.
 
 ## Testing Contract
 
