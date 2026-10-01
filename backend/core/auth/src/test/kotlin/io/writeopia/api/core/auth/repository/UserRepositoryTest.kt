@@ -1,6 +1,7 @@
 package io.writeopia.api.core.auth.repository
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import io.writeopia.api.core.auth.models.UserStatus
 import io.writeopia.sql.WriteopiaDbBackend
 import kotlinx.coroutines.test.runTest
 import kotlin.test.AfterTest
@@ -24,6 +25,7 @@ class UserRepositoryTest {
     private lateinit var db: WriteopiaDbBackend
     private val testUserId = "test-user-123"
     private val testEmail = "test@example.com"
+    private val testUsername = "testuser"
 
     @BeforeTest
     fun setup() {
@@ -50,10 +52,11 @@ class UserRepositoryTest {
         db.insertUser(
             id = testUserId,
             name = name,
+            username = testUsername,
             email = testEmail,
             password = password,
             salt = salt,
-            enabled = true
+            status = UserStatus.ACTIVE
         )
 
         // Then: user should be retrievable from database
@@ -61,10 +64,11 @@ class UserRepositoryTest {
         assertNotNull(retrievedUser, "User should be found after insertion")
         assertEquals(testUserId, retrievedUser.id)
         assertEquals(name, retrievedUser.name)
+        assertEquals(testUsername, retrievedUser.username)
         assertEquals(testEmail, retrievedUser.email)
         assertEquals(password, retrievedUser.password)
         assertEquals(salt, retrievedUser.salt)
-        assertEquals(true, retrievedUser.enabled)
+        assertEquals(UserStatus.ACTIVE, retrievedUser.status)
     }
 
     @Test
@@ -73,10 +77,11 @@ class UserRepositoryTest {
         db.insertUser(
             id = testUserId,
             name = "Test User",
+            username = testUsername,
             email = testEmail,
             password = "hashedPassword123",
             salt = "randomSalt123",
-            enabled = true
+            status = UserStatus.ACTIVE
         )
 
         // Verify user exists
@@ -119,10 +124,11 @@ class UserRepositoryTest {
         db.insertUser(
             id = userId,
             name = "Delete Test User",
+            username = "delete_user",
             email = email,
             password = "password",
             salt = "salt",
-            enabled = true
+            status = UserStatus.ACTIVE
         )
 
         // Verify user was created
@@ -148,10 +154,11 @@ class UserRepositoryTest {
         db.insertUser(
             id = testUserId,
             name = "Test User",
+            username = testUsername,
             email = testEmail,
             password = "password",
             salt = "salt",
-            enabled = true
+            status = UserStatus.ACTIVE
         )
 
         // When: retrieving user by email
@@ -160,6 +167,7 @@ class UserRepositoryTest {
         // Then: user should be found
         assertNotNull(user, "User should be found by email")
         assertEquals(testUserId, user.id)
+        assertEquals(testUsername, user.username)
         assertEquals(testEmail, user.email)
     }
 

@@ -53,13 +53,14 @@ class RegisterViewModelTest {
             emailConfirmationRequired = true
         )
 
-        coEvery { authApi.register(any(), any(), any(), any()) } returns ResultData.Complete(registerResponse)
+        coEvery { authApi.register(any(), any(), any(), any(), any()) } returns ResultData.Complete(registerResponse)
         coEvery { authRepository.saveUser(any(), any()) } just Runs
         coEvery { authRepository.savePendingConfirmationEmail(any()) } just Runs
 
         val viewModel = RegisterViewModel(authRepository, authApi)
         viewModel.emailChanged("test@example.com")
         viewModel.nameChanged("Test User")
+        viewModel.usernameChanged("testuser")
         viewModel.workspaceChanged("My Workspace")
         viewModel.passwordChanged("password123")
 
@@ -68,7 +69,7 @@ class RegisterViewModelTest {
         advanceUntilIdle()
 
         // Then - verify register was called and pending email saved (no admin key available)
-        coVerify { authApi.register("Test User", "test@example.com", "My Workspace", "password123") }
+        coVerify { authApi.register("Test User", "test@example.com", "My Workspace", "password123", "testuser") }
         coVerify { authRepository.saveUser(any(), selected = true) }
         coVerify { authRepository.savePendingConfirmationEmail("test@example.com") }
     }
@@ -76,11 +77,12 @@ class RegisterViewModelTest {
     @Test
     fun `onRegister should not call enableUser when registration fails`() = runTest {
         // Given
-        coEvery { authApi.register(any(), any(), any(), any()) } returns ResultData.Error(Exception("Registration failed"))
+        coEvery { authApi.register(any(), any(), any(), any(), any()) } returns ResultData.Error(Exception("Registration failed"))
 
         val viewModel = RegisterViewModel(authRepository, authApi)
         viewModel.emailChanged("test@example.com")
         viewModel.nameChanged("Test User")
+        viewModel.usernameChanged("testuser")
         viewModel.workspaceChanged("My Workspace")
         viewModel.passwordChanged("password123")
 
@@ -95,11 +97,12 @@ class RegisterViewModelTest {
     @Test
     fun `onRegister should handle registration error gracefully`() = runTest {
         // Given
-        coEvery { authApi.register(any(), any(), any(), any()) } throws RuntimeException("Network error")
+        coEvery { authApi.register(any(), any(), any(), any(), any()) } throws RuntimeException("Network error")
 
         val viewModel = RegisterViewModel(authRepository, authApi)
         viewModel.emailChanged("test@example.com")
         viewModel.nameChanged("Test User")
+        viewModel.usernameChanged("testuser")
         viewModel.workspaceChanged("My Workspace")
         viewModel.passwordChanged("password123")
 

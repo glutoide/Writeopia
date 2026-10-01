@@ -24,6 +24,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import io.github.kdroidfilter.platformtools.darkmodedetector.isSystemInDarkMode
 import io.github.kdroidfilter.platformtools.darkmodedetector.windows.setWindowsAdaptiveTitleBar
+import io.writeopia.account.ui.AccountDeletionStartedScreen
 import io.writeopia.auth.core.di.setupBearerTokenHandler
 import io.writeopia.auth.navigation.authNavigation
 import io.writeopia.auth.navigation.startScreen
@@ -43,6 +44,7 @@ import io.writeopia.sqldelight.database.DatabaseFactory
 import io.writeopia.sqldelight.database.driver.DriverFactory
 import io.writeopia.sqldelight.di.WriteopiaDbInjector
 import io.writeopia.theme.WriteopiaTheme
+import io.writeopia.update.ui.DesktopUpdatePrompt
 import io.writeopia.ui.image.ImageLoadConfig
 import io.writeopia.ui.keyboard.KeyboardEvent
 import io.writeopia.common.utils.ALLOW_BACKEND
@@ -296,6 +298,29 @@ private fun ApplicationScope.App(onCloseRequest: () -> Unit = ::exitApplication)
                                                 inclusive = true
                                             }
                                         }
+                                    },
+                                    navigateToAccountDeletionStarted = {
+                                        navigationController.navigate(
+                                            Destinations.ACCOUNT_DELETION_STARTED.id
+                                        ) {
+                                            popUpTo(navigationController.graph.startDestinationId) {
+                                                inclusive = true
+                                            }
+                                        }
+                                    }
+                                )
+                            }
+
+                            composable(route = Destinations.ACCOUNT_DELETION_STARTED.id) {
+                                AccountDeletionStartedScreen(
+                                    logout = {
+                                        navigationController.navigate(
+                                            Destinations.AUTH_MENU_INNER_NAVIGATION.id
+                                        ) {
+                                            popUpTo(navigationController.graph.startDestinationId) {
+                                                inclusive = true
+                                            }
+                                        }
                                     }
                                 )
                             }
@@ -307,6 +332,8 @@ private fun ApplicationScope.App(onCloseRequest: () -> Unit = ::exitApplication)
                                 navigationController.navigate(Destinations.MAIN_APP.id)
                             }
                         }
+
+                        DesktopUpdatePrompt()
                     }
                 }
             }

@@ -30,14 +30,15 @@ class AiAuthorizationTest {
         db.userEntityQueries.insertUser(
             id = testUserId,
             name = "Test User",
+            username = "testuser",
             created_at = System.currentTimeMillis(),
             email = testEmail,
             password = "hashedpassword",
             salt = "salt",
-            enabled = true,
             confirmation_code = null,
             confirmation_code_expiry = null,
-            account_type = "FREE"
+            account_type = "FREE",
+            status = "ACTIVE"
         )
     }
 
@@ -177,14 +178,15 @@ class AiAuthorizationTest {
         db.userEntityQueries.insertUser(
             id = otherUserId,
             name = "Other User",
+            username = "otheruser",
             created_at = System.currentTimeMillis(),
             email = otherEmail,
             password = "hashedpassword",
             salt = "salt",
-            enabled = true,
             confirmation_code = null,
             confirmation_code_expiry = null,
-            account_type = "PREMIUM"
+            account_type = "PREMIUM",
+            status = "ACTIVE"
         )
 
         try {

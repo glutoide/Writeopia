@@ -31,7 +31,10 @@ import io.writeopia.sdk.export.DocumentToJson
 import io.writeopia.sdk.export.DocumentToMarkdown
 import io.writeopia.sdk.export.DocumentWriter
 import io.writeopia.sdk.model.action.Action
+import io.writeopia.sdk.model.story.Selection
 import io.writeopia.sdk.model.story.StoryState
+import io.writeopia.sdk.models.comment.Comment
+import io.writeopia.sdk.models.comment.CommentConversation
 import io.writeopia.sdk.models.document.Document
 import io.writeopia.sdk.models.files.ExternalFile
 import io.writeopia.sdk.models.id.GenerateId
@@ -222,6 +225,11 @@ class NoteEditorKmpViewModel(
             hasLines || hasTextSelection
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(), false)
 
+    override val isWorkspaceOffline: StateFlow<Boolean> =
+        authRepository.listenForWorkspace()
+            .map { workspace -> workspace.id == Workspace.disconnectedWorkspace().id }
+            .stateIn(viewModelScope, SharingStarted.Lazily, false)
+
 //    val selectionOfText = writeopiaManager.
 
     private val findsOfSearch: Flow<Set<Int>> =
@@ -248,6 +256,9 @@ class NoteEditorKmpViewModel(
             SharingStarted.WhileSubscribed(),
             emptySet()
         )
+
+    override val commentConversations: StateFlow<Map<String, List<Comment>>> =
+        writeopiaManager.commentConversations
 
     @OptIn(ExperimentalCoroutinesApi::class)
     private val aiConfigState = authRepository.listenForUser()
@@ -494,21 +505,27 @@ class NoteEditorKmpViewModel(
         writeopiaManager.newDocument(documentId, title, parentFolder = parentFolderId)
 
         // Use global sync manager for syncing - continues even after ViewModel is cleared
-        documentSyncManager.registerForSync(
+        documentSyncManager.registerForDbSync(
             documentId = documentId,
             documentEditionFlow = writeopiaManager.documentEditionState,
             workspaceIdFlow = writeopiaManager.workspaceIdFlow,
+            commentConversationsFlow = writeopiaManager.commentConversations,
             documentTracker = OnUpdateDocumentTracker(documentRepository)
         )
 
-        // Also register for backend sync if the API is available
-        storyStepSyncApi?.let { syncApi ->
-            documentSyncManager.registerForBackendSync(
-                documentId = documentId,
-                documentEditionFlow = writeopiaManager.documentEditionState,
-                workspaceIdFlow = writeopiaManager.workspaceIdFlow,
-                syncApi = syncApi
-            )
+        // Also register for backend sync if the API is available and the workspace is connected
+        viewModelScope.launch(Dispatchers.Default) {
+            if (!isWorkspaceDisconnected()) {
+                storyStepSyncApi?.let { syncApi ->
+                    documentSyncManager.registerForBackendSync(
+                        documentId = documentId,
+                        documentEditionFlow = writeopiaManager.documentEditionState,
+                        workspaceIdFlow = writeopiaManager.workspaceIdFlow,
+                        commentConversationsFlow = writeopiaManager.commentConversations,
+                        syncApi = syncApi
+                    )
+                }
+            }
         }
 
 //        writeopiaManager.liveSync(sharedEditionManager)
@@ -526,7 +543,7 @@ class NoteEditorKmpViewModel(
 
             if (localDocument != null) {
                 writeopiaManager.loadDocument(localDocument)
-                registerForSync(documentId)
+                registerForSync(documentId, isDisconnected)
                 // Set initial published state from local document
                 _isDocumentPublished.value = localDocument.published
             }
@@ -544,7 +561,7 @@ class NoteEditorKmpViewModel(
 
                         // Register for sync if this is the first load (backend-only document)
                         if (localDocument == null) {
-                            registerForSync(documentId)
+                            registerForSync(documentId, isDisconnected)
                         }
                     }
                 )
@@ -567,12 +584,13 @@ class NoteEditorKmpViewModel(
         }
     }
 
-    private fun registerForSync(documentId: String) {
+    private fun registerForSync(documentId: String, isDisconnected: Boolean) {
         // Use global sync manager for syncing - continues even after ViewModel is cleared
-        documentSyncManager.registerForSync(
+        documentSyncManager.registerForDbSync(
             documentId = documentId,
             documentEditionFlow = writeopiaManager.documentEditionState,
             workspaceIdFlow = writeopiaManager.workspaceIdFlow,
+            commentConversationsFlow = writeopiaManager.commentConversations,
             documentTracker = OnUpdateDocumentTracker(
                 documentRepository,
                 onStoryStepUpdate = { storyStep, position ->
@@ -591,15 +609,23 @@ class NoteEditorKmpViewModel(
             )
         )
 
-        // Also register for backend sync if the API is available
-        storyStepSyncApi?.let { syncApi ->
-            documentSyncManager.registerForBackendSync(
-                documentId = documentId,
-                documentEditionFlow = writeopiaManager.documentEditionState,
-                workspaceIdFlow = writeopiaManager.workspaceIdFlow,
-                syncApi = syncApi
-            )
+        // Also register for backend sync if the API is available and the workspace is connected
+        if (!isDisconnected) {
+            storyStepSyncApi?.let { syncApi ->
+                documentSyncManager.registerForBackendSync(
+                    documentId = documentId,
+                    documentEditionFlow = writeopiaManager.documentEditionState,
+                    workspaceIdFlow = writeopiaManager.workspaceIdFlow,
+                    commentConversationsFlow = writeopiaManager.commentConversations,
+                    syncApi = syncApi
+                )
+            }
         }
+    }
+
+    private suspend fun isWorkspaceDisconnected(): Boolean {
+        val workspace = authRepository.getWorkspace() ?: Workspace.disconnectedWorkspace()
+        return workspace.id == Workspace.disconnectedWorkspace().id
     }
 
     override fun onHeaderColorSelection(color: Int?) {
@@ -693,6 +719,27 @@ class NoteEditorKmpViewModel(
             writeopiaManager.toggleSpan(span)
         }
     }
+
+    override fun createComment(text: String): CommentConversation? =
+        writeopiaManager.createComment(text)
+
+    override fun createComment(text: String, target: Selection): CommentConversation? =
+        writeopiaManager.createComment(text, target)
+
+    override fun addComment(conversationId: String, text: String): Comment? =
+        writeopiaManager.addComment(conversationId, text)
+
+    override fun getCommentConversationAtCursor(): CommentConversation? =
+        writeopiaManager.getCommentConversationAtCursor()
+
+    override fun getCommentConversationAtSelection(): CommentConversation? =
+        writeopiaManager.getCommentConversationAtSelection()
+
+    override fun deleteComment(conversationId: String, commentId: String): Boolean =
+        writeopiaManager.deleteComment(conversationId, commentId)
+
+    override fun deleteCommentConversation(conversationId: String): Boolean =
+        writeopiaManager.deleteCommentConversation(conversationId)
 
     override fun toggleEditable() {
         writeopiaManager.toggleLockDocument()
@@ -1017,6 +1064,12 @@ class NoteEditorKmpViewModel(
             type = AiTaskType.TEXT_GENERATION,
             description = "Generating text..."
         ) {
+            val workspace = authRepository.getWorkspace() ?: Workspace.disconnectedWorkspace()
+
+            if (workspace.id == Workspace.disconnectedWorkspace().id) {
+                return@enqueueTask Result.success(Unit)
+            }
+
             PromptService.documentPromptGenAi(
                 targetMode = targetMode,
                 promptFn = promptFn,
@@ -1108,6 +1161,7 @@ class NoteEditorKmpViewModel(
             val docId = documentId.value
             if (docId.isNotEmpty() && documentsApi != null) {
                 val workspaceId = authRepository.getWorkspace()?.id ?: return@launch
+                if (workspaceId == Workspace.disconnectedWorkspace().id) return@launch
                 val result = documentsApi.isDocumentPublished(docId, workspaceId)
                 if (result is ResultData.Complete) {
                     _isDocumentPublished.value = result.data
@@ -1131,6 +1185,7 @@ class NoteEditorKmpViewModel(
                 val docId = documentId.value
                 if (docId.isNotEmpty() && documentsApi != null) {
                     val workspaceId = authRepository.getWorkspace()?.id ?: return@launch
+                    if (workspaceId == Workspace.disconnectedWorkspace().id) return@launch
                     val result = documentsApi.publishDocument(docId, workspaceId)
                     if (result is ResultData.Complete) {
                         _isDocumentPublished.value = true
@@ -1149,6 +1204,7 @@ class NoteEditorKmpViewModel(
                 val docId = documentId.value
                 if (docId.isNotEmpty() && documentsApi != null) {
                     val workspaceId = authRepository.getWorkspace()?.id ?: return@launch
+                    if (workspaceId == Workspace.disconnectedWorkspace().id) return@launch
                     val result = documentsApi.unpublishDocument(docId, workspaceId)
                     if (result is ResultData.Complete) {
                         _isDocumentPublished.value = false

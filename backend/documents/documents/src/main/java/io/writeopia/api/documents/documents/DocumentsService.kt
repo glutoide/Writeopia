@@ -1,3 +1,4 @@
+
 @file:OptIn(ExperimentalTime::class)
 
 package io.writeopia.api.documents.documents
@@ -7,22 +8,23 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import io.ktor.http.isSuccess
-import io.writeopia.sdk.serialization.json.SendDocumentsRequest
+import io.writeopia.api.documents.documents.repository.SyncEventType
 import io.writeopia.api.documents.documents.repository.addUserFavorite
 import io.writeopia.api.documents.documents.repository.createSyncEvent
 import io.writeopia.api.documents.documents.repository.deleteDocumentsByFolderId
-import io.writeopia.api.documents.documents.repository.documentsDiffByFolder
-import io.writeopia.api.documents.documents.repository.documentsDiffByWorkspace
 import io.writeopia.api.documents.documents.repository.deleteDocumentsByIds
 import io.writeopia.api.documents.documents.repository.deleteFolder
-import io.writeopia.api.documents.documents.repository.deleteStoryStepById
 import io.writeopia.api.documents.documents.repository.deleteStoryStepsByIds
+import io.writeopia.api.documents.documents.repository.documentsDiffByFolder
+import io.writeopia.api.documents.documents.repository.documentsDiffByWorkspace
 import io.writeopia.api.documents.documents.repository.getDocumentById
+import io.writeopia.api.documents.documents.repository.getDocumentWorkspaceId
+import io.writeopia.api.documents.documents.repository.getDocumentByTitle
+import io.writeopia.api.documents.documents.repository.getDocumentWithContentById
 import io.writeopia.api.documents.documents.repository.getFolderById
 import io.writeopia.api.documents.documents.repository.getFoldersByParentId
 import io.writeopia.api.documents.documents.repository.getIdsByParentId
 import io.writeopia.api.documents.documents.repository.getPublishedDocumentById
-import io.writeopia.api.documents.documents.repository.getStoryStepById
 import io.writeopia.api.documents.documents.repository.getStoryStepsAfterTime
 import io.writeopia.api.documents.documents.repository.getUserFavoriteDocumentIds
 import io.writeopia.api.documents.documents.repository.isDocumentPublished
@@ -30,37 +32,66 @@ import io.writeopia.api.documents.documents.repository.isUserFavorite
 import io.writeopia.api.documents.documents.repository.moveDocumentToFolder
 import io.writeopia.api.documents.documents.repository.moveFolderToFolder
 import io.writeopia.api.documents.documents.repository.removeUserFavorite
-import io.writeopia.api.documents.documents.repository.getDocumentByTitle
-import io.writeopia.api.documents.documents.repository.getDocumentWithContentById
+import io.writeopia.api.documents.documents.repository.replaceCommentConversations
 import io.writeopia.api.documents.documents.repository.saveDocument
+import io.writeopia.api.documents.documents.repository.saveDocumentInTransaction
 import io.writeopia.api.documents.documents.repository.saveFolder
 import io.writeopia.api.documents.documents.repository.setDocumentPublished
-import io.writeopia.api.documents.documents.repository.SyncEventType
 import io.writeopia.api.documents.documents.repository.updateDocumentTitle
+import io.writeopia.api.documents.documents.repository.touchDocument
 import io.writeopia.api.documents.documents.repository.upsertStoryStep
 import io.writeopia.api.documents.search.SearchDocument
+import io.writeopia.api.genai.service.GenAiService
 import io.writeopia.connection.ResultData
 import io.writeopia.connection.Urls
 import io.writeopia.connection.wrWebClient
+import io.writeopia.sdk.models.comment.Comment
 import io.writeopia.sdk.models.document.Document
 import io.writeopia.sdk.models.document.Folder
 import io.writeopia.sdk.models.document.MenuItem
 import io.writeopia.sdk.models.id.GenerateId
 import io.writeopia.sdk.models.markdown.InlineMarkdownParser
+import io.writeopia.sdk.models.span.Span
+import io.writeopia.sdk.models.span.SpanInfo
 import io.writeopia.sdk.models.story.StoryStep
 import io.writeopia.sdk.models.story.StoryTypes
+import io.writeopia.sdk.models.workspace.Workspace
+import io.writeopia.sdk.serialization.data.DocumentApi
 import io.writeopia.sdk.serialization.extensions.toApi
 import io.writeopia.sdk.serialization.extensions.toModel
+import io.writeopia.sdk.serialization.extensions.toCommentMap
+import io.writeopia.sdk.serialization.json.SendDocumentsRequest
 import io.writeopia.sdk.serialization.request.DocumentSyncInfo
 import io.writeopia.sdk.serialization.request.StoryStepSyncRequest
 import io.writeopia.sdk.serialization.response.StoryStepSyncResponse
 import io.writeopia.sdk.serialization.response.UnsyncedDocumentInfo
-import io.writeopia.api.genai.service.GenAiService
 import io.writeopia.sql.WriteopiaDbBackend
 import kotlin.time.Clock
 import kotlin.time.ExperimentalTime
 
 object DocumentsService {
+
+    suspend fun documentFromApiForWrite(
+        document: DocumentApi,
+        workspaceId: String,
+        writeopiaDb: WriteopiaDbBackend,
+    ): Document {
+        val scopedDocument = document.copy(workspaceId = workspaceId)
+        val existingWorkspaceId = writeopiaDb.getDocumentWorkspaceId(scopedDocument.id)
+
+        require(existingWorkspaceId == null || existingWorkspaceId == workspaceId) {
+            "Document does not belong to the requested workspace"
+        }
+
+        if (scopedDocument.commentConversations == null) {
+            val existing = writeopiaDb.getDocumentWithContentById(scopedDocument.id, workspaceId)
+            require(existing?.commentConversations.isNullOrEmpty()) {
+                "This document contains comments. Update the client before modifying it."
+            }
+        }
+
+        return scopedDocument.toModel()
+    }
 
     suspend fun receiveDocuments(
         documents: List<Document>,
@@ -156,11 +187,10 @@ object DocumentsService {
         return updatedFolder
     }
 
-    suspend fun upsertDocument(
+    fun upsertDocument(
         document: Document,
         workspaceId: String,
         writeopiaDb: WriteopiaDbBackend,
-        useAi: Boolean
     ): Document {
         val documentWithWorkspace = document.copy(
             workspaceId = workspaceId,
@@ -169,10 +199,6 @@ object DocumentsService {
         )
 
         writeopiaDb.saveDocument(documentWithWorkspace)
-
-        if (useAi) {
-            sendToAiHub(listOf(documentWithWorkspace), workspaceId)
-        }
 
         return documentWithWorkspace
     }
@@ -193,15 +219,28 @@ object DocumentsService {
             // Skip if document doesn't belong to the workspace
             if (originalDocument.workspaceId != workspaceId) continue
 
-            // Clone the content with new IDs for each StoryStep
+            val conversationIdMap = originalDocument.commentConversations.keys.associateWith {
+                GenerateId.generate()
+            }
+            val clonedComments = originalDocument.commentConversations.map { (conversationId, comments) ->
+                conversationIdMap.getValue(conversationId) to comments.map { comment ->
+                    Comment(
+                        id = GenerateId.generate(),
+                        text = comment.text,
+                    )
+                }
+            }.toMap()
+
+            // Clone the content with new IDs for each StoryStep and remap comment span references.
             val clonedContent = originalDocument.content.mapValues { (_, storyStep) ->
-                cloneStoryStep(storyStep)
+                cloneStoryStep(storyStep, conversationIdMap)
             }
 
             val clonedDocument = originalDocument.copy(
                 id = GenerateId.generate(),
                 title = "${originalDocument.title} (Copy)",
                 content = clonedContent,
+                commentConversations = clonedComments,
                 createdAt = now,
                 lastUpdatedAt = now,
                 lastSyncedAt = now,
@@ -219,11 +258,28 @@ object DocumentsService {
         return clonedDocuments
     }
 
-    private fun cloneStoryStep(storyStep: StoryStep): StoryStep {
+    private fun cloneStoryStep(
+        storyStep: StoryStep,
+        conversationIdMap: Map<String, String>,
+    ): StoryStep {
+        val remappedSpans = storyStep.spans.map { span ->
+            if (span.span == Span.COMMENT && span.extra != null) {
+                SpanInfo.create(
+                    start = span.start,
+                    end = span.end,
+                    span = span.span,
+                    extra = conversationIdMap[span.extra] ?: span.extra,
+                )
+            } else {
+                span
+            }
+        }.toSet()
+
         return storyStep.copy(
             id = GenerateId.generate(),
             localId = GenerateId.generate(),
-            steps = storyStep.steps.map { cloneStoryStep(it) }
+            spans = remappedSpans,
+            steps = storyStep.steps.map { cloneStoryStep(it, conversationIdMap) }
         )
     }
 
@@ -238,7 +294,7 @@ object DocumentsService {
         userId: String,
         writeopiaDb: WriteopiaDbBackend
     ) {
-        val childFolders = writeopiaDb.getFoldersByParentId(folderId)
+        val childFolders = writeopiaDb.getFoldersByParentId(folderId, workspaceId)
 
         // Recursively delete all child folders
         childFolders.forEach { childFolder ->
@@ -246,7 +302,7 @@ object DocumentsService {
         }
 
         // Get document IDs in this folder before deleting them
-        val documentIds = writeopiaDb.getIdsByParentId(folderId)
+        val documentIds = writeopiaDb.getIdsByParentId(folderId, workspaceId)
 
         // Create DELETE_DOCUMENT events for all documents in this folder
         documentIds.forEach { documentId ->
@@ -259,7 +315,7 @@ object DocumentsService {
         }
 
         // Delete all documents in this folder
-        writeopiaDb.deleteDocumentsByFolderId(folderId)
+        writeopiaDb.deleteDocumentsByFolderId(folderId, workspaceId)
 
         // Create DELETE_FOLDER event
         writeopiaDb.createSyncEvent(
@@ -279,8 +335,16 @@ object DocumentsService {
         userId: String,
         writeopiaDb: WriteopiaDbBackend
     ) {
-        // Create DELETE_DOCUMENT events for all documents
-        documentIds.forEach { documentId ->
+        val ownedIds = documentIds.filter { documentId ->
+            val ownerWorkspaceId = writeopiaDb.getDocumentWorkspaceId(documentId)
+            require(ownerWorkspaceId == null || ownerWorkspaceId == workspaceId) {
+                "Document does not belong to the requested workspace"
+            }
+            ownerWorkspaceId != null
+        }
+
+        // Create DELETE_DOCUMENT events only for documents that exist in this workspace.
+        ownedIds.forEach { documentId ->
             writeopiaDb.createSyncEvent(
                 workspaceId = workspaceId,
                 eventType = SyncEventType.DELETE_DOCUMENT,
@@ -289,7 +353,7 @@ object DocumentsService {
             )
         }
 
-        writeopiaDb.deleteDocumentsByIds(documentIds)
+        writeopiaDb.deleteDocumentsByIds(ownedIds)
     }
 
     suspend fun favoriteDocument(
@@ -468,11 +532,13 @@ object DocumentsService {
     }
 
     private suspend fun sendToAiHub(documents: List<Document>, workspaceId: String): Boolean {
+        if (workspaceId == Workspace.disconnectedWorkspace().id) return true
+
         val aiHubUrl = Urls.AI_HUB ?: return true
 
         return wrWebClient.post("$aiHubUrl/documents/") {
             contentType(ContentType.Application.Json)
-            setBody(SendDocumentsRequest(documents.map { it.toApi() }, workspaceId))
+            setBody(SendDocumentsRequest(documents.map { it.withoutEditorComments().toApi() }, workspaceId))
         }.status.isSuccess()
     }
 
@@ -485,8 +551,18 @@ object DocumentsService {
      * Returns null if the document doesn't exist or is not published.
      */
     suspend fun getPublishedDocument(documentId: String, writeopiaDb: WriteopiaDbBackend): Document? {
-        return writeopiaDb.getPublishedDocumentById(documentId)
+        return writeopiaDb.getPublishedDocumentById(documentId)?.withoutEditorComments()
     }
+
+    private fun Document.withoutEditorComments(): Document = copy(
+        content = content.mapValues { (_, storyStep) -> storyStep.withoutEditorComments() },
+        commentConversations = emptyMap(),
+    )
+
+    private fun StoryStep.withoutEditorComments(): StoryStep = copy(
+        spans = spans.filterNot { span -> span.span == Span.COMMENT }.toSet(),
+        steps = steps.map { storyStep -> storyStep.withoutEditorComments() },
+    )
 
     /**
      * Sets the published status of a document.
@@ -520,17 +596,62 @@ object DocumentsService {
         request: StoryStepSyncRequest,
         writeopiaDb: WriteopiaDbBackend
     ): StoryStepSyncResponse {
+        require(request.documentId == documentId && request.workspaceId == workspaceId) {
+            "Sync request document/workspace does not match the route"
+        }
+        require(request.commentConversations.orEmpty().none { it.comments.isEmpty() }) {
+            "Comment conversations must contain at least one comment"
+        }
+
+        val documentWorkspaceId = writeopiaDb.getDocumentWorkspaceId(documentId)
+        require(documentWorkspaceId == null || documentWorkspaceId == workspaceId) {
+            "Document does not belong to the requested workspace"
+        }
+
         val serverTimestamp = Clock.System.now().toEpochMilliseconds()
-
-        // Check if document exists, create it if not
         val existingDocument = writeopiaDb.getDocumentById(documentId, workspaceId)
-        if (existingDocument == null) {
-            // Extract title from the first title-type story step, or use a default
-            val titleStep = request.changes.firstOrNull { it.storyStep.type.name == "title" }
-            val title = titleStep?.storyStep?.text ?: "Untitled"
 
+        // Read the server state before applying this request so conflict resolution uses one baseline.
+        val serverUpdatedSteps = writeopiaDb.getStoryStepsAfterTime(
+            documentId = documentId,
+            afterTime = request.lastSyncTimestamp
+        )
+        val serverStepTimestamps = serverUpdatedSteps.associate { (_, step) ->
+            step.id to (step.lastUpdatedAt ?: 0L)
+        }
+
+        val acceptedChanges = request.changes.mapNotNull { change ->
+            val clientStep = change.storyStep.toModel()
+            val clientTimestamp = change.storyStep.lastUpdatedAt ?: 0L
+            val serverStepTimestamp = serverStepTimestamps[clientStep.id]
+
+            if (serverStepTimestamp == null || clientTimestamp >= serverStepTimestamp) {
+                change to clientStep
+            } else {
+                null
+            }
+        }
+        val clientUpdatedStepIds = acceptedChanges
+            .mapTo(mutableSetOf()) { (_, clientStep) -> clientStep.id }
+        val updatedTitle = acceptedChanges
+            .lastOrNull { (change, _) -> change.storyStep.type.name == "title" }
+            ?.first
+            ?.storyStep
+            ?.text
+
+        val deletionsToApply = request.deletions.filter { deletionId ->
+            val serverStepTimestamp = serverStepTimestamps[deletionId]
+            serverStepTimestamp == null || serverStepTimestamp <= request.lastSyncTimestamp
+        }
+
+        val newDocument = if (existingDocument == null) {
+            val title = request.changes
+                .firstOrNull { change -> change.storyStep.type.name == "title" }
+                ?.storyStep
+                ?.text
+                ?: "Untitled"
             val now = Clock.System.now()
-            val newDocument = Document(
+            Document(
                 id = documentId,
                 title = title,
                 content = emptyMap(),
@@ -540,64 +661,53 @@ object DocumentsService {
                 parentId = "root",
                 workspaceId = workspaceId
             )
-            writeopiaDb.saveDocument(newDocument)
+        } else {
+            null
         }
 
-        // Get server steps updated after client's last sync
-        val serverUpdatedSteps = writeopiaDb.getStoryStepsAfterTime(
-            documentId = documentId,
-            afterTime = request.lastSyncTimestamp
-        )
+        val hasMutations =
+            newDocument != null ||
+                request.commentConversations != null ||
+                acceptedChanges.isNotEmpty() ||
+                deletionsToApply.isNotEmpty()
 
-        // Create a map of server step IDs to their lastUpdatedAt for conflict resolution
-        val serverStepTimestamps = serverUpdatedSteps.associate { (_, step) ->
-            step.id to (step.lastUpdatedAt ?: 0L)
-        }
+        if (hasMutations) {
+            writeopiaDb.transaction {
+                newDocument?.let(writeopiaDb::saveDocumentInTransaction)
 
-        // Track which step IDs the client is updating (to exclude from response)
-        val clientUpdatedStepIds = mutableSetOf<String>()
-        var updatedTitle: String? = null
-
-        // Process client changes
-        for (change in request.changes) {
-            val clientStep = change.storyStep.toModel()
-            val clientTimestamp = change.storyStep.lastUpdatedAt ?: 0L
-            val serverStepTimestamp = serverStepTimestamps[clientStep.id]
-
-            // Only save if server step doesn't exist or client is newer
-            if (serverStepTimestamp == null || clientTimestamp >= serverStepTimestamp) {
-                writeopiaDb.upsertStoryStep(
-                    storyStep = clientStep,
-                    position = change.position,
-                    documentId = documentId,
-                    lastUpdatedAt = request.requestTimestamp
-                )
-                clientUpdatedStepIds.add(clientStep.id)
-
-                // Track title updates
-                if (change.storyStep.type.name == "title") {
-                    updatedTitle = change.storyStep.text
+                request.commentConversations?.let { conversations ->
+                    writeopiaDb.replaceCommentConversations(
+                        documentId = documentId,
+                        conversations = conversations.toCommentMap(),
+                    )
                 }
+
+                acceptedChanges.forEach { (change, clientStep) ->
+                    writeopiaDb.upsertStoryStep(
+                        storyStep = clientStep,
+                        position = change.position,
+                        documentId = documentId,
+                        lastUpdatedAt = request.requestTimestamp
+                    )
+                }
+
+                if (updatedTitle != null) {
+                    val currentTitle = existingDocument?.title ?: newDocument?.title
+                    if (currentTitle != updatedTitle) {
+                        writeopiaDb.updateDocumentTitle(documentId, updatedTitle)
+                    }
+                }
+
+                if (deletionsToApply.isNotEmpty()) {
+                    writeopiaDb.deleteStoryStepsByIds(deletionsToApply)
+                }
+
+                writeopiaDb.touchDocument(
+                    documentId = documentId,
+                    workspaceId = workspaceId,
+                    timestamp = serverTimestamp,
+                )
             }
-        }
-
-        // Update document title if title step was changed
-        if (updatedTitle != null) {
-            val currentDoc = writeopiaDb.getDocumentById(documentId, workspaceId)
-            if (currentDoc != null && currentDoc.title != updatedTitle) {
-                writeopiaDb.updateDocumentTitle(documentId, updatedTitle)
-            }
-        }
-
-        // Process deletions
-        val deletionsToApply = request.deletions.filter { deletionId ->
-            // Only delete if the step wasn't updated on the server after client's last sync
-            val serverStepTimestamp = serverStepTimestamps[deletionId]
-            serverStepTimestamp == null || serverStepTimestamp <= request.lastSyncTimestamp
-        }
-
-        if (deletionsToApply.isNotEmpty()) {
-            writeopiaDb.deleteStoryStepsByIds(deletionsToApply)
         }
 
         // Get deletions that happened on server (steps that existed before but are now gone)

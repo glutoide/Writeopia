@@ -18,7 +18,11 @@ import io.ktor.server.testing.ApplicationTestBuilder
 import io.ktor.server.testing.testApplication
 import io.writeopia.app.requests.AddUserToWorkspaceRequest
 import io.writeopia.api.core.auth.models.ManageUserRequest
+import io.writeopia.api.core.auth.models.UserStatus
 import io.writeopia.api.core.auth.repository.deleteUserByEmail
+import io.writeopia.api.core.auth.repository.getUserByEmail
+import io.writeopia.api.core.auth.repository.insertUser
+import io.writeopia.api.core.auth.repository.userExistsByUsernameOrEmail
 import io.writeopia.api.geteway.configurePersistence
 import io.writeopia.api.geteway.module
 import io.writeopia.sdk.serialization.data.WorkspaceApi
@@ -34,6 +38,7 @@ import kotlin.test.BeforeTest
 import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 
@@ -66,6 +71,7 @@ class AuthIntegrationTest {
                     workspaceName = "workspace name",
                     name = "Name",
                     email = "email@gmail.com",
+                    username = "email_user",
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -81,7 +87,7 @@ class AuthIntegrationTest {
         }
 
         val client = defaultClient()
-        val email = Random.nextInt().toString()
+        val email = "dup_${Random.nextInt(100000)}@gmail.com"
 
         val response = client.post("/api/auth/register") {
             contentType(ContentType.Application.Json)
@@ -90,6 +96,7 @@ class AuthIntegrationTest {
                     workspaceName = "workspace name",
                     name = "Name",
                     email = email,
+                    username = "user1_${Random.nextInt(100000)}",
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -102,6 +109,7 @@ class AuthIntegrationTest {
                     workspaceName = "workspace name",
                     name = "Name",
                     email = email,
+                    username = "user2_${Random.nextInt(100000)}",
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -109,6 +117,178 @@ class AuthIntegrationTest {
 
         assertEquals(HttpStatusCode.Created, response.status)
         assertEquals(HttpStatusCode.Conflict, response1.status)
+    }
+
+    @Test
+    fun `it should not be possible create 2 users with the same email in different casing`() = testApplication {
+        application {
+            module(db, debugMode = true)
+        }
+
+        val client = defaultClient()
+        val base = "case_${Random.nextInt(100000)}"
+        val email1 = "${base.uppercase()}@gmail.com"
+        val email2 = "${base.lowercase()}@gmail.com"
+
+        val response1 = client.post("/api/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                RegisterRequest(
+                    workspaceName = "workspace name",
+                    name = "Name",
+                    email = email1,
+                    username = "user1_${Random.nextInt(100000)}",
+                    password = "lasjbdalsdq08w9y&",
+                )
+            )
+        }
+
+        val response2 = client.post("/api/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                RegisterRequest(
+                    workspaceName = "workspace name 2",
+                    name = "Name",
+                    email = email2,
+                    username = "user2_${Random.nextInt(100000)}",
+                    password = "lasjbdalsdq08w9y&",
+                )
+            )
+        }
+
+        assertEquals(HttpStatusCode.Created, response1.status)
+        assertEquals(HttpStatusCode.Conflict, response2.status)
+    }
+
+    @Test
+    fun `it should be possible to login with email in different casing`() = testApplication {
+        application {
+            module(db, debugMode = true)
+        }
+
+        val client = defaultClient()
+        val password = "lasjbdalsdq08w9y&"
+        val base = "cased_login_${Random.nextInt(100000)}"
+        val emailRegistered = "${base.lowercase()}@gmail.com"
+        val emailLogin = "${base.uppercase()}@GMAIL.COM"
+
+        val response = client.post("/api/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                RegisterRequest(
+                    workspaceName = "workspace name",
+                    name = "Name",
+                    email = emailRegistered,
+                    username = "user_${Random.nextInt(100000)}",
+                    password = password,
+                )
+            )
+        }
+        assertEquals(HttpStatusCode.Created, response.status)
+
+        val loginResponse = client.post("/api/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(LoginRequest(emailLogin, password))
+        }
+        assertEquals(HttpStatusCode.OK, loginResponse.status)
+        assertEquals(emailRegistered, loginResponse.body<AuthResponse>().writeopiaUser.email)
+    }
+
+    @Test
+    fun `it should not be possible to create 2 users with the same username`() = testApplication {
+        application {
+            module(db, debugMode = true)
+        }
+
+        val client = defaultClient()
+        val username = "user_${Random.nextInt(100000)}"
+
+        val response1 = client.post("/api/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                RegisterRequest(
+                    workspaceName = "workspace name",
+                    name = "Name 1",
+                    email = "user1_${Random.nextInt(100000)}@gmail.com",
+                    username = username,
+                    password = "lasjbdalsdq08w9y&",
+                )
+            )
+        }
+
+        val response2 = client.post("/api/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                RegisterRequest(
+                    workspaceName = "workspace name",
+                    name = "Name 2",
+                    email = "user2_${Random.nextInt(100000)}@gmail.com",
+                    username = username,
+                    password = "lasjbdalsdq08w9y&",
+                )
+            )
+        }
+
+        assertEquals(HttpStatusCode.Created, response1.status)
+        assertEquals(HttpStatusCode.Conflict, response2.status)
+    }
+
+    @Test
+    fun `it should not be possible to register with an email as username`() = testApplication {
+        application {
+            module(db, debugMode = true)
+        }
+
+        val client = defaultClient()
+
+        val response = client.post("/api/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                RegisterRequest(
+                    workspaceName = "workspace name",
+                    name = "Name",
+                    email = "valid_${Random.nextInt(100000)}@gmail.com",
+                    username = "invalid_user@gmail.com",
+                    password = "lasjbdalsdq08w9y&",
+                )
+            )
+        }
+
+        assertEquals(HttpStatusCode.BadRequest, response.status)
+    }
+
+    @Test
+    fun `userExistsByUsernameOrEmail should return true if username or email exists, and false if neither exists`() {
+        val email = "existstest_${Random.nextInt()}@gmail.com"
+        val username = "existstest_${Random.nextInt()}"
+
+        db.insertUser(
+            name = "Test User",
+            username = username,
+            email = email,
+            password = "password",
+            status = UserStatus.ACTIVE,
+            salt = "salt",
+        )
+
+        // Both match
+        assertTrue(db.userExistsByUsernameOrEmail(username = username, email = email))
+        // Only username matches
+        assertTrue(
+            db.userExistsByUsernameOrEmail(
+                username = username,
+                email = "nonexistent_${Random.nextInt()}@gmail.com"
+            )
+        )
+        // Only email matches
+        assertTrue(db.userExistsByUsernameOrEmail(username = "nonexistent_${Random.nextInt()}", email = email))
+        // Neither matches
+        assertFalse(
+            db.userExistsByUsernameOrEmail(
+                username = "nonexistent_${Random.nextInt()}",
+                email = "nonexistent_${Random.nextInt()}@gmail.com"
+            )
+        )
     }
 
     @Test
@@ -127,6 +307,7 @@ class AuthIntegrationTest {
                     workspaceName = "workspace name",
                     name = "Name",
                     email = "email@gmail.com",
+                    username = "email_user",
                     password = password,
                 )
             )
@@ -150,7 +331,50 @@ class AuthIntegrationTest {
             }
         }
 
-        assertEquals(HttpStatusCode.OK, response2.status)
+        // Starts the account-deletion saga rather than deleting synchronously - see
+        // AccountDeletionService.requestDeletion.
+        assertEquals(HttpStatusCode.Accepted, response2.status)
+    }
+
+    @Test
+    fun `it should be possible to login with username`() = testApplication {
+        application {
+            module(db, debugMode = true)
+        }
+
+        val client = defaultClient()
+        val password = "lasjbdalsdq08w9y&"
+
+        val response = client.post("/api/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                RegisterRequest(
+                    workspaceName = "workspace name",
+                    name = "Name",
+                    email = "email@gmail.com",
+                    username = "email_user",
+                    password = password,
+                )
+            )
+        }
+
+        assertEquals(HttpStatusCode.Created, response.status)
+
+        // Login using username
+        val loginWithUsername = client.post("/api/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(LoginRequest("email_user", password))
+        }
+        assertEquals(HttpStatusCode.OK, loginWithUsername.status)
+        assertEquals("email@gmail.com", loginWithUsername.body<AuthResponse>().writeopiaUser.email)
+
+        // Login using email
+        val loginWithEmail = client.post("/api/auth/login") {
+            contentType(ContentType.Application.Json)
+            setBody(LoginRequest("email@gmail.com", password))
+        }
+        assertEquals(HttpStatusCode.OK, loginWithEmail.status)
+        assertEquals("email@gmail.com", loginWithEmail.body<AuthResponse>().writeopiaUser.email)
     }
 
     @Test
@@ -186,6 +410,7 @@ class AuthIntegrationTest {
                     workspaceName = "workspace name",
                     name = "Name",
                     email = "email@gmail.com",
+                    username = "email_user",
                     password = password,
                 )
             )
@@ -275,6 +500,7 @@ class AuthIntegrationTest {
                     workspaceName = "workspace name",
                     name = "Name",
                     email = "email@gmail.com",
+                    username = "email_user",
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -299,6 +525,7 @@ class AuthIntegrationTest {
                     workspaceName = "workspace name",
                     name = "Name",
                     email = "email@gmail.com",
+                    username = "email_user",
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -324,15 +551,16 @@ class AuthIntegrationTest {
 
         val client = defaultClient()
 
-        val email1 = Random.nextInt().toString()
+        val email1 = "add1_${Random.nextInt(100000)}@gmail.com"
 
         val response1 = client.post("/api/auth/register") {
             contentType(ContentType.Application.Json)
             setBody(
                 RegisterRequest(
                     workspaceName = "workspace name",
-                    name = Random.nextInt().toString(),
+                    name = "User 1",
                     email = email1,
+                    username = "user1_${Random.nextInt(100000)}",
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -340,15 +568,16 @@ class AuthIntegrationTest {
 
         assertTrue { response1.status.isSuccess() }
 
-        val email2 = Random.nextInt().toString()
+        val email2 = "add2_${Random.nextInt(100000)}@gmail.com"
 
         val response2 = client.post("/api/auth/register") {
             contentType(ContentType.Application.Json)
             setBody(
                 RegisterRequest(
                     workspaceName = "workspace name",
-                    name = Random.nextInt().toString(),
+                    name = "User 2",
                     email = email2,
+                    username = "user2_${Random.nextInt(100000)}",
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -392,15 +621,16 @@ class AuthIntegrationTest {
 
         val client = defaultClient()
 
-        val email1 = Random.nextInt().toString()
+        val email1 = "dupws1_${Random.nextInt(100000)}@gmail.com"
 
         val response1 = client.post("/api/auth/register") {
             contentType(ContentType.Application.Json)
             setBody(
                 RegisterRequest(
                     workspaceName = "workspace name",
-                    name = Random.nextInt().toString(),
+                    name = "User 1",
                     email = email1,
+                    username = "user1_${Random.nextInt(100000)}",
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -408,15 +638,16 @@ class AuthIntegrationTest {
 
         assertTrue { response1.status.isSuccess() }
 
-        val email2 = Random.nextInt().toString()
+        val email2 = "dupws2_${Random.nextInt(100000)}@gmail.com"
 
         val response2 = client.post("/api/auth/register") {
             contentType(ContentType.Application.Json)
             setBody(
                 RegisterRequest(
                     workspaceName = "workspace name",
-                    name = Random.nextInt().toString(),
+                    name = "User 2",
                     email = email2,
+                    username = "user2_${Random.nextInt(100000)}",
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -467,15 +698,16 @@ class AuthIntegrationTest {
 
         val client = defaultClient()
 
-        val email1 = Random.nextInt().toString()
+        val email1 = "rmws1_${Random.nextInt(100000)}@gmail.com"
 
         val response1 = client.post("/api/auth/register") {
             contentType(ContentType.Application.Json)
             setBody(
                 RegisterRequest(
                     workspaceName = "workspace name",
-                    name = Random.nextInt().toString(),
+                    name = "User 1",
                     email = email1,
+                    username = "user1_${Random.nextInt(100000)}",
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -483,15 +715,16 @@ class AuthIntegrationTest {
 
         assertTrue { response1.status.isSuccess() }
 
-        val email2 = Random.nextInt().toString()
+        val email2 = "rmws2_${Random.nextInt(100000)}@gmail.com"
 
         val response2 = client.post("/api/auth/register") {
             contentType(ContentType.Application.Json)
             setBody(
                 RegisterRequest(
                     workspaceName = "workspace name",
-                    name = Random.nextInt().toString(),
+                    name = "User 2",
                     email = email2,
+                    username = "user2_${Random.nextInt(100000)}",
                     password = "lasjbdalsdq08w9y&",
                 )
             )

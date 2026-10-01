@@ -3,6 +3,7 @@
 package io.writeopia.core.folders.sync
 
 import io.writeopia.sdk.models.document.Document
+import io.writeopia.sdk.models.span.Span
 import io.writeopia.sdk.models.story.StoryStep
 import kotlin.time.ExperimentalTime
 
@@ -43,8 +44,40 @@ class DocumentMerger {
             backendDocument
         }
 
-        return baseDocument.copy(content = mergedContent)
+        val otherDocument =
+            if (baseDocument === localDocument) backendDocument else localDocument
+        val referencedConversationIds = mergedContent.values
+            .asSequence()
+            .flatMap { story -> story.commentConversationIds() }
+            .toSet()
+        val supplementalConversations =
+            if (baseDocument.commentConversations.isEmpty()) {
+                otherDocument.commentConversations
+            } else {
+                otherDocument.commentConversations.filterKeys { conversationId ->
+                    conversationId in referencedConversationIds
+                }
+            }
+        val commentConversations =
+            supplementalConversations + baseDocument.commentConversations
+
+        return baseDocument.copy(
+            content = mergedContent,
+            commentConversations = commentConversations,
+        )
     }
+
+    private fun StoryStep.commentConversationIds(): Sequence<String> =
+        sequence {
+            spans.asSequence()
+                .filter { span -> span.span == Span.COMMENT }
+                .mapNotNull { span -> span.extra }
+                .forEach { conversationId -> yield(conversationId) }
+
+            steps.forEach { step ->
+                yieldAll(step.commentConversationIds())
+            }
+        }
 
     private fun mergeContent(
         localContent: Map<Double, StoryStep>,
