@@ -11,6 +11,7 @@ concurrency:
 jobs:
   android_build_test:
     name: Android - Build, Test and Distribute
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
     services:
       postgres:
@@ -65,6 +66,7 @@ jobs:
         run: rm -f application/androidApp/google-services.json
   android_distribute:
     name: Android - Firebase App Distribution
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
     env:
       isCI: "true"
@@ -107,6 +109,7 @@ jobs:
           rm -f upload-keystore.jks
   desktop_build_and_test:
     name: Desktop - Build, Test and Publish
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: macos-14
     env:
       isCI: "true"
@@ -133,6 +136,7 @@ jobs:
         run: ./gradlew jvmTest
   web_build_and_publish:
     name: Web - Build and Publish
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
     env:
       isCI: "true"
