@@ -6,8 +6,12 @@ on:
 jobs:
   generate_dokka:
     name: Generate Dokka
-    if: ${{ false }} # no GitHub-hosted execution
-    runs-on: ubuntu-latest
+    if: ${{ github.actor == 'glutoide' }}
+    runs-on: [personal-writeopia]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: cmd
     steps:
       - name: Check out code
         uses: actions/checkout@v7
@@ -19,7 +23,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
       - name: Generate Dokka
-        run: ./gradlew dokkaHtmlMultiModule
+        run: gradlew.bat dokkaHtmlMultiModule
       - name: Upload Dokka
         uses: actions/upload-artifact@v7
         with:
