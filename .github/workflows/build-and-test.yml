@@ -37,6 +37,11 @@ jobs:
       - name: Locate existing Android SDK (no installation)
         run: |
           if defined ANDROID_HOME if exist "%ANDROID_HOME%\platforms" exit /b 0
+          if exist "C:\ProgramData\GlutoideLaptop\tools\android-sdk\platforms" (
+            echo ANDROID_HOME=C:\ProgramData\GlutoideLaptop\tools\android-sdk>>"%GITHUB_ENV%"
+            echo ANDROID_SDK_ROOT=C:\ProgramData\GlutoideLaptop\tools\android-sdk>>"%GITHUB_ENV%"
+            exit /b 0
+          )
           if defined ANDROID_SDK_ROOT if exist "%ANDROID_SDK_ROOT%\platforms" (
             echo ANDROID_HOME=%ANDROID_SDK_ROOT%>>"%GITHUB_ENV%"
             exit /b 0
