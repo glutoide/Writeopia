@@ -18,6 +18,7 @@ on:
 jobs:
   deploy_web:
     name: Build and Deploy Web App
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-latest
     permissions:
       contents: read
