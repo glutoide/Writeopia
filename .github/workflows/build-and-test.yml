@@ -11,8 +11,17 @@ concurrency:
 jobs:
   kt_lint:
     name: Ktlint
-    if: ${{ false }} # no GitHub-hosted execution
-    runs-on: ubuntu-22.04
+    if: >-
+      github.actor == 'glutoide' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [personal-writeopia]
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: cmd
     env:
       isCI: "true"
     steps:
@@ -25,8 +34,30 @@ jobs:
           java-version: '21'
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
+      - name: Locate existing Android SDK (no installation)
+        run: |
+          if defined ANDROID_HOME if exist "%ANDROID_HOME%\platforms" exit /b 0
+          if exist "C:\ProgramData\GlutoideLaptop\tools\android-sdk\platforms" (
+            echo ANDROID_HOME=C:\ProgramData\GlutoideLaptop\tools\android-sdk>>"%GITHUB_ENV%"
+            echo ANDROID_SDK_ROOT=C:\ProgramData\GlutoideLaptop\tools\android-sdk>>"%GITHUB_ENV%"
+            exit /b 0
+          )
+          if defined ANDROID_SDK_ROOT if exist "%ANDROID_SDK_ROOT%\platforms" (
+            echo ANDROID_HOME=%ANDROID_SDK_ROOT%>>"%GITHUB_ENV%"
+            exit /b 0
+          )
+          if exist "%LOCALAPPDATA%\Android\Sdk\platforms" (
+            echo ANDROID_HOME=%LOCALAPPDATA%\Android\Sdk>>"%GITHUB_ENV%"
+            exit /b 0
+          )
+          for /d %%U in ("C:\Users\*") do if exist "%%~fU\AppData\Local\Android\Sdk\platforms" (
+            echo ANDROID_HOME=%%~fU\AppData\Local\Android\Sdk>>"%GITHUB_ENV%"
+            exit /b 0
+          )
+          echo Android SDK not available to this runner. No host changes made.
+          exit /b 1
       - name: Ktlint
-        run: ./gradlew ktlintCheck
+        run: gradlew.bat ktlintCheck
   mac_app_build:
     name: Mac App Build
     if: ${{ false }} # no GitHub-hosted execution
@@ -261,8 +292,17 @@ jobs:
           ./gradlew jsBrowserDevelopmentWebpack
   test_docusaurus:
     name: Test docusaurus
-    if: ${{ false }} # no GitHub-hosted execution
-    runs-on: ubuntu-latest
+    if: >-
+      github.actor == 'glutoide' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [personal-writeopia]
+    permissions:
+      contents: read
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: cmd
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -272,9 +312,9 @@ jobs:
           cache-dependency-path: documentation/writeopia_docs/package-lock.json
       - name: Install dependencies
         working-directory: ./documentation/writeopia_docs
-        run: npm ci
+        run: npm.cmd ci
       - name: Test build website
         working-directory: ./documentation/writeopia_docs
-        run: npm run build
+        run: npm.cmd run build
 
 
