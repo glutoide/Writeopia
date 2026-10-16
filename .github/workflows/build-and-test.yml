@@ -11,6 +11,7 @@ concurrency:
 jobs:
   kt_lint:
     name: Ktlint
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
     env:
       isCI: "true"
@@ -28,6 +29,7 @@ jobs:
         run: ./gradlew ktlintCheck
   mac_app_build:
     name: Mac App Build
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
     env:
       isCI: "true"
@@ -47,6 +49,7 @@ jobs:
           SIGN_IDENTITY: ${{ secrets.SIGN_IDENTITY }}
   ui_jvm_tests:
     name: Jvm UI Compose tests
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
     env:
       isCI: "true"
@@ -86,6 +89,7 @@ jobs:
           retention-days: 7
   general_build:
     name: General - Build debug
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
     services:
       postgres:
@@ -151,6 +155,7 @@ jobs:
           retention-days: 7
   ios_build:
     name: iOS build
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
     env:
       isCI: "true"
@@ -168,6 +173,7 @@ jobs:
         run: ./gradlew compileKotlinIosArm64
   backend_build_and_test:
     name: Backend - build
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
     services:
       postgres:
@@ -235,6 +241,7 @@ jobs:
           retention-days: 7
   web_build:
     name: Web - Build debug
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
     env:
       isCI: "true"
@@ -254,6 +261,7 @@ jobs:
           ./gradlew jsBrowserDevelopmentWebpack
   test_docusaurus:
     name: Test docusaurus
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
