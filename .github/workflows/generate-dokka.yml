@@ -6,6 +6,7 @@ on:
 jobs:
   generate_dokka:
     name: Generate Dokka
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-latest
     steps:
       - name: Check out code
