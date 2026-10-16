@@ -11,6 +11,7 @@ on:
 jobs:
   build-and-push:
     name: Build and push ${{ matrix.service }}
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-latest
     permissions:
       contents: read
