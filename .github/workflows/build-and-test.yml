@@ -11,8 +11,15 @@ concurrency:
 jobs:
   kt_lint:
     name: Ktlint
-    if: ${{ false }} # no GitHub-hosted execution
-    runs-on: ubuntu-22.04
+    if: >-
+      github.actor == 'glutoide' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [personal-writeopia]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: cmd
     env:
       isCI: "true"
     steps:
@@ -26,7 +33,7 @@ jobs:
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v6
       - name: Ktlint
-        run: ./gradlew ktlintCheck
+        run: gradlew.bat ktlintCheck
   mac_app_build:
     name: Mac App Build
     if: ${{ false }} # no GitHub-hosted execution
@@ -261,8 +268,15 @@ jobs:
           ./gradlew jsBrowserDevelopmentWebpack
   test_docusaurus:
     name: Test docusaurus
-    if: ${{ false }} # no GitHub-hosted execution
-    runs-on: ubuntu-latest
+    if: >-
+      github.actor == 'glutoide' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: [personal-writeopia]
+    timeout-minutes: 20
+    defaults:
+      run:
+        shell: cmd
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -272,9 +286,9 @@ jobs:
           cache-dependency-path: documentation/writeopia_docs/package-lock.json
       - name: Install dependencies
         working-directory: ./documentation/writeopia_docs
-        run: npm ci
+        run: npm.cmd ci
       - name: Test build website
         working-directory: ./documentation/writeopia_docs
-        run: npm run build
+        run: npm.cmd run build
 
 
