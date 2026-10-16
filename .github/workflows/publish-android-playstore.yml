@@ -6,6 +6,7 @@ on:
 jobs:
   build_and_publish:
     name: Build and Publish Android App
+    if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
 
     steps:
