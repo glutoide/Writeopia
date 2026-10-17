@@ -6,10 +6,11 @@ on:
       - main
 
 concurrency:
-  group: ${{ github.ref }}
+  group: ${{ github.ref }}-${{ github.sha }}
 
 jobs:
   kt_lint:
+    if: ${{ false }} # legacy hosted job remains disabled
     name: Ktlint
     if: >-
       github.actor == 'glutoide' &&
@@ -59,6 +60,7 @@ jobs:
       - name: Ktlint
         run: gradlew.bat ktlintCheck
   mac_app_build:
+    if: ${{ false }} # legacy hosted job remains disabled
     name: Mac App Build
     if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
@@ -79,6 +81,7 @@ jobs:
         env:
           SIGN_IDENTITY: ${{ secrets.SIGN_IDENTITY }}
   ui_jvm_tests:
+    if: ${{ false }} # legacy hosted job remains disabled
     name: Jvm UI Compose tests
     if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
@@ -119,6 +122,7 @@ jobs:
             **/build/test-results/
           retention-days: 7
   general_build:
+    if: ${{ false }} # legacy hosted job remains disabled
     name: General - Build debug
     if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
@@ -185,6 +189,7 @@ jobs:
             **/build/test-results/
           retention-days: 7
   ios_build:
+    if: ${{ false }} # legacy hosted job remains disabled
     name: iOS build
     if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
@@ -203,6 +208,7 @@ jobs:
       - name: Build debug
         run: ./gradlew compileKotlinIosArm64
   backend_build_and_test:
+    if: ${{ false }} # legacy hosted job remains disabled
     name: Backend - build
     if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
@@ -260,7 +266,16 @@ jobs:
       - name: Build backend
         run: ./gradlew :backend:gateway:assemble
       - name: Test backend
-        run: ./gradlew :backend:gateway:test
+        run: >-
+          ./gradlew
+          :backend:gateway:test
+          :backend:core:ai:test
+          :backend:core:auth:test
+          :backend:core:genai_service:test
+          :backend:documents:documents:test
+          :backend:editor:api_editor_socket:test
+          :backend:micro:auth:test
+          :backend:micro:media:test
       - name: Upload test reports
         uses: actions/upload-artifact@v7
         if: always()
@@ -271,6 +286,7 @@ jobs:
             backend/**/build/test-results/
           retention-days: 7
   web_build:
+    if: ${{ false }} # legacy hosted job remains disabled
     name: Web - Build debug
     if: ${{ false }} # no GitHub-hosted execution
     runs-on: ubuntu-22.04
@@ -291,6 +307,7 @@ jobs:
           ./gradlew kotlinUpgradeYarnLock
           ./gradlew jsBrowserDevelopmentWebpack
   test_docusaurus:
+    if: ${{ false }} # legacy hosted job remains disabled
     name: Test docusaurus
     if: >-
       github.actor == 'glutoide' &&

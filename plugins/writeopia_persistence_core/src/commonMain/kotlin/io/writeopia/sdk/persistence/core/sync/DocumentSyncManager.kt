@@ -1,9 +1,12 @@
+
 package io.writeopia.sdk.persistence.core.sync
 
 import io.writeopia.sdk.manager.DocumentTracker
 import io.writeopia.sdk.manager.StoryStepSyncTracker
+import io.writeopia.sdk.manager.UnsupportedCommentConversationsException
 import io.writeopia.sdk.model.document.DocumentInfo
 import io.writeopia.sdk.model.story.StoryState
+import io.writeopia.sdk.models.comment.Comment
 import io.writeopia.sdk.models.story.StoryStep
 import io.writeopia.sdk.persistence.core.tracker.OnUpdateStoryStepSyncTracker
 import io.writeopia.sdk.serialization.request.StoryStepSyncRequest
@@ -14,6 +17,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 
 /**
@@ -23,7 +27,7 @@ import kotlinx.coroutines.launch
  * ensuring that document syncing continues even when the user leaves the editor.
  *
  * Usage:
- * 1. Register a document for syncing when the editor opens using [registerForSync]
+ * 1. Register a document for syncing when the editor opens using [registerForDbSync]
  * 2. The sync will continue even after the ViewModel is cleared
  * 3. Call [unregisterFromSync] when you want to explicitly stop syncing a document
  */
@@ -45,12 +49,36 @@ class DocumentSyncManager(
      * @param documentId The unique identifier of the document to sync
      * @param documentEditionFlow Flow emitting the document state and info on each change
      * @param workspaceIdFlow Flow emitting the current workspace ID
+     * @param commentConversationsFlow Current document-level comment conversations
      * @param documentTracker The tracker responsible for saving document changes
      */
-    fun registerForSync(
+    fun registerForDbSync(
         documentId: String,
         documentEditionFlow: Flow<Pair<StoryState, DocumentInfo>>,
         workspaceIdFlow: Flow<String>,
+        documentTracker: DocumentTracker
+    ) {
+        activeSyncJobs[documentId]?.cancel()
+
+        val job = scope.launch(dispatcher) {
+            try {
+                documentTracker.saveOnStoryChanges(
+                    documentEditionFlow,
+                    workspaceIdFlow
+                )
+            } catch (error: UnsupportedCommentConversationsException) {
+                println("Document sync stopped for $documentId: ${error.message}")
+            }
+        }
+
+        activeSyncJobs[documentId] = job
+    }
+
+    fun registerForDbSync(
+        documentId: String,
+        documentEditionFlow: Flow<Pair<StoryState, DocumentInfo>>,
+        workspaceIdFlow: Flow<String>,
+        commentConversationsFlow: StateFlow<Map<String, List<Comment>>>,
         documentTracker: DocumentTracker
     ) {
         // Cancel any existing sync for this document
@@ -58,10 +86,15 @@ class DocumentSyncManager(
 
         // Start a new sync job in the global scope
         val job = scope.launch(dispatcher) {
-            documentTracker.saveOnStoryChanges(
-                documentEditionFlow,
-                workspaceIdFlow
-            )
+            try {
+                documentTracker.saveOnStoryChanges(
+                    documentEditionFlow,
+                    workspaceIdFlow,
+                    commentConversationsFlow
+                )
+            } catch (error: UnsupportedCommentConversationsException) {
+                println("Document sync stopped for $documentId: ${error.message}")
+            }
         }
 
         activeSyncJobs[documentId] = job
@@ -83,6 +116,7 @@ class DocumentSyncManager(
         documentId: String,
         documentEditionFlow: Flow<Pair<StoryState, DocumentInfo>>,
         workspaceIdFlow: Flow<String>,
+        commentConversationsFlow: StateFlow<Map<String, List<Comment>>>? = null,
         syncApi: suspend (StoryStepSyncRequest) -> StoryStepSyncResponse,
         onServerUpdate: suspend (List<Pair<Double, StoryStep>>, List<String>) -> Unit = { _, _ -> }
     ) {
@@ -91,7 +125,8 @@ class DocumentSyncManager(
 
         val storyStepSyncTracker: StoryStepSyncTracker = OnUpdateStoryStepSyncTracker(
             syncApi = syncApi,
-            onServerUpdate = onServerUpdate
+            onServerUpdate = onServerUpdate,
+            commentConversationsFlow = commentConversationsFlow,
         )
 
         // Start a new backend sync job in the global scope

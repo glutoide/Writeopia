@@ -22,6 +22,7 @@ import io.writeopia.sdk.serialization.data.auth.RegisterRequest
 import io.writeopia.sdk.serialization.json.SendDocumentsRequest
 import io.writeopia.sdk.serialization.request.WorkspaceNameChangeRequest
 import io.writeopia.sdk.serialization.request.WorkspaceRoleChangeRequest
+import io.writeopia.tutorials.Tutorials
 import kotlin.random.Random
 import kotlin.random.nextInt
 import kotlin.test.AfterTest
@@ -50,7 +51,7 @@ class WorkspacesTest {
         }
 
         val client = defaultClient()
-        val email = Random.nextInt(10000).toString()
+        val email = "ws_${Random.nextInt(10000)}@test.com"
         val workspaceName1 = "workspace name"
 
         val response = client.post("/api/auth/register") {
@@ -60,6 +61,7 @@ class WorkspacesTest {
                     workspaceName = workspaceName1,
                     name = "Name",
                     email = email,
+                    username = email.substringBefore("@"),
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -113,6 +115,7 @@ class WorkspacesTest {
                     workspaceName = workspaceName1,
                     name = "Name",
                     email = email1,
+                    username = email1.substringBefore("@"),
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -128,6 +131,7 @@ class WorkspacesTest {
                     workspaceName = "other workspace",
                     name = "Name 2",
                     email = email2,
+                    username = email2.substringBefore("@"),
                     password = "lasjbdalsdq08w9y&",
                 )
             )
@@ -207,6 +211,7 @@ class WorkspacesTest {
                     workspaceName = workspaceName,
                     name = "Test User",
                     email = email,
+                    username = email.substringBefore("@"),
                     password = "testpassword123&",
                 )
             )
@@ -225,8 +230,11 @@ class WorkspacesTest {
 
         val workspace = workspaces.first()
 
-        // Initially, workspace should have 0 documents
-        assertEquals(0, workspace.documentCount)
+        val tutorialsCount = Tutorials.allTutorialsDocuments().count()
+
+        // Registration seeds the workspace's tutorial documents, so it starts with those
+        // instead of 0 - see AuthRouting.kt's register handler / TutorialsService.
+        assertEquals(tutorialsCount, workspace.documentCount)
 
         // Create some documents in the workspace
         val document1 = DocumentApi(
@@ -278,8 +286,8 @@ class WorkspacesTest {
         val workspaces2 = getWorkspaceResponse2.body<List<WorkspaceApi>>()
         val workspace2 = workspaces2.first()
 
-        // Now workspace should have 3 documents
-        assertEquals(3, workspace2.documentCount)
+        // Now workspace should have the tutorials plus the 3 new documents
+        assertEquals(tutorialsCount + 3, workspace2.documentCount)
 
         // Clean up
         db.deleteDocumentById(document1.id)
@@ -306,6 +314,7 @@ class WorkspacesTest {
                     workspaceName = workspaceName,
                     name = "Admin User",
                     email = email,
+                    username = email.substringBefore("@"),
                     password = "testpassword123&",
                 )
             )
@@ -370,33 +379,35 @@ class WorkspacesTest {
             val email2 = "multiadmin2_${Random.nextInt(10000)}@test.com"
             val workspaceName = "workspace_multiadmin_test"
 
-            // Register first user (creates workspace with user as ADMIN)
-            val response1 = client.post("/api/auth/register") {
-                contentType(ContentType.Application.Json)
-                setBody(
-                    RegisterRequest(
-                        workspaceName = workspaceName,
-                        name = "Admin User 1",
-                        email = email1,
-                        password = "testpassword123&",
-                    )
+        // Register first user (creates workspace with user as ADMIN)
+        val response1 = client.post("/api/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                RegisterRequest(
+                    workspaceName = workspaceName,
+                    name = "Admin User 1",
+                    email = email1,
+                    username = email1.substringBefore("@"),
+                    password = "testpassword123&",
                 )
-            }
+            )
+        }
 
             assertEquals(HttpStatusCode.Created, response1.status)
 
-            // Register second user
-            val response2 = client.post("/api/auth/register") {
-                contentType(ContentType.Application.Json)
-                setBody(
-                    RegisterRequest(
-                        workspaceName = "other workspace",
-                        name = "Admin User 2",
-                        email = email2,
-                        password = "testpassword123&",
-                    )
+        // Register second user
+        val response2 = client.post("/api/auth/register") {
+            contentType(ContentType.Application.Json)
+            setBody(
+                RegisterRequest(
+                    workspaceName = "other workspace",
+                    name = "Admin User 2",
+                    email = email2,
+                    username = email2.substringBefore("@"),
+                    password = "testpassword123&",
                 )
-            }
+            )
+        }
 
             assertEquals(HttpStatusCode.Created, response2.status)
 
@@ -479,6 +490,7 @@ class WorkspacesTest {
                     workspaceName = workspaceName,
                     name = "Admin User",
                     email = email1,
+                    username = email1.substringBefore("@"),
                     password = "testpassword123&",
                 )
             )
@@ -494,6 +506,7 @@ class WorkspacesTest {
                     workspaceName = "other workspace",
                     name = "Editor User",
                     email = email2,
+                    username = email2.substringBefore("@"),
                     password = "testpassword123&",
                 )
             )
@@ -579,6 +592,7 @@ class WorkspacesTest {
                     workspaceName = workspaceName,
                     name = "Admin User",
                     email = email,
+                    username = email.substringBefore("@"),
                     password = "testpassword123&",
                 )
             )
