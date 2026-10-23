@@ -24,9 +24,22 @@ jobs:
         uses: gradle/actions/setup-gradle@v6
       - name: Generate Dokka
         run: gradlew.bat dokkaHtmlMultiModule
-      - name: Upload Dokka
-        uses: actions/upload-artifact@v7
-        with:
-          name: dokka
-          path: build/dokka/htmlMultiModule/*
+      - name: Save Dokka on the existing Windows runner (no Actions artifact)
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:GITHUB_WORKSPACE 'build\dokka\htmlMultiModule'
+          if (-not (Test-Path -LiteralPath $source -PathType Container)) {
+            throw 'Dokka output directory is missing'
+          }
+          $localRoot = 'C:\Glutoide'
+          if (-not (Test-Path -LiteralPath $localRoot -PathType Container)) {
+            throw 'Expected existing laptop storage C:\Glutoide is unavailable'
+          }
+          $destination = Join-Path $localRoot ('artifacts\Writeopia\Dokka\' + $env:GITHUB_SHA)
+          New-Item -ItemType Directory -Path $destination -Force | Out-Null
+          Copy-Item -Path (Join-Path $source '*') -Destination $destination -Recurse -Force
+          $files = @(Get-ChildItem -LiteralPath $destination -File -Recurse)
+          if ($files.Count -eq 0) { throw 'No Dokka files were copied' }
+          Write-Host ('Dokka saved locally: {0} ({1} files)' -f $destination, $files.Count)
 
